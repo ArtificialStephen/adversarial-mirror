@@ -80,11 +80,26 @@ export class MirrorEngine {
     userInput: string,
     history: ConversationMessage[]
   ): AsyncGenerator<MirrorEvent, void> {
-    const messages = [...history, { role: 'user', content: userInput }]
+    const originalMessages = [...history, { role: 'user', content: userInput }]
+    const challengerHistory = history.map((message) =>
+      message.role === 'assistant'
+        ? {
+            ...message,
+            content: `[PREVIOUS ORIGINAL RESPONSE]\n${message.content}`
+          }
+        : message
+    )
+    const challengerMessages = [
+      ...challengerHistory,
+      { role: 'user', content: userInput }
+    ]
     const originalPrompt = buildOriginalPrompt()
     const challengerPrompt = buildChallengerPrompt(this.intensity)
-    const originalStream = this.original.chat(messages, originalPrompt)
-    const challengerStream = this.challenger!.chat(messages, challengerPrompt)
+    const originalStream = this.original.chat(originalMessages, originalPrompt)
+    const challengerStream = this.challenger!.chat(
+      challengerMessages,
+      challengerPrompt
+    )
 
     const originalAccumulator = createAccumulator()
     const challengerAccumulator = createAccumulator()

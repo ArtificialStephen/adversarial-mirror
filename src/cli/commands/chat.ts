@@ -43,7 +43,8 @@ export function runChat(): void {
         session,
         originalId: originalAdapter.id,
         challengerId: challengerAdapter?.id,
-        intensity: config.session.defaultIntensity
+        intensity: config.session.defaultIntensity,
+        layout: config.ui.layout
       })
     )
   } catch (error) {

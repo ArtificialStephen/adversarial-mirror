@@ -20,6 +20,7 @@ interface MirrorAppProps {
   originalId: string
   challengerId?: string
   intensity: string
+  layout?: 'side-by-side' | 'stacked'
 }
 
 export function MirrorApp({
@@ -27,7 +28,8 @@ export function MirrorApp({
   session,
   originalId,
   challengerId,
-  intensity
+  intensity,
+  layout
 }: MirrorAppProps): JSX.Element {
   const [input, setInput] = useState('')
   const [originalTurns, setOriginalTurns] = useState<Turn[]>([])
@@ -59,13 +61,14 @@ export function MirrorApp({
     setCurrentOriginal('')
     setCurrentChallenger('')
 
+    const history = session.getHistory()
     session.addUser(question)
 
     let originalBuffer = ''
     let challengerBuffer = ''
 
     try {
-      for await (const event of engine.run(question, session.getHistory())) {
+      for await (const event of engine.run(question, history)) {
         if (event.type === 'classifying') {
           setIntent(null)
         }
@@ -149,7 +152,7 @@ export function MirrorApp({
         </Box>
       )}
       <Box marginTop={1}>
-        <ChatLayout>
+        <ChatLayout layout={layout}>
           <BrainPanel title={`ORIGINAL  ${originalId}`}>
             {originalTurns.map((turn, index) => (
               <Box key={`orig-${index}`} flexDirection="column" marginTop={1}>
