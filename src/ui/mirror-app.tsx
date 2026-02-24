@@ -63,7 +63,23 @@ export function MirrorApp({
   const liveOriginalRef = useRef('')
   const liveChallengerRef = useRef('')
   const { stdout } = useStdout()
-  const columns = stdout?.columns ?? 120
+  const [columns, setColumns] = useState(stdout?.columns ?? 120)
+
+  useEffect(() => {
+    if (!stdout) {
+      return
+    }
+
+    const handleResize = () => {
+      setColumns(stdout.columns ?? 120)
+    }
+
+    handleResize()
+    stdout.on('resize', handleResize)
+    return () => {
+      stdout.off('resize', handleResize)
+    }
+  }, [stdout])
 
   const fittedHeaderArt = useMemo(
     () => fitHeaderArt(headerArt, columns),
