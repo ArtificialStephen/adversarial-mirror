@@ -8,7 +8,7 @@ interface StatusBarProps {
 export function StatusBar({ text }: StatusBarProps): JSX.Element {
   return (
     <Box>
-      <Text>{text}</Text>
+      <Text>{text || 'Ready'}</Text>
     </Box>
   )
 }

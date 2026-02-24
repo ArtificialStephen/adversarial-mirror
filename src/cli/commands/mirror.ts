@@ -1,9 +1,12 @@
+import { randomUUID } from 'node:crypto'
 import type { Command } from 'commander'
 import { createAdapter } from '../../brains/factory.js'
 import { loadConfig } from '../../config/loader.js'
 import { HeuristicIntentClassifier } from '../../engine/intent-classifier.js'
 import { MirrorEngine } from '../../engine/mirror-engine.js'
 import { Session } from '../../engine/session.js'
+import { addHistoryEntry } from '../../history/store.js'
+import type { BrainResult, IntentResult } from '../../types/index.js'
 
 export async function runMirror(
   question: string,
@@ -41,27 +44,52 @@ export async function runMirror(
       challenger: challengerAdapter,
       intensity: intensity as 'mild' | 'moderate' | 'aggressive',
       autoClassify: mirrorEnabled && classifyEnabled,
-      classifier
+      classifier,
+      debug: Boolean(opts.debug)
     })
 
     const session = new Session(1)
-    const results = new Map<string, string>()
+    const results = new Map<string, BrainResult>()
     let intentLine: string | null = null
+    let intentResult: IntentResult | undefined
+    const entryId = randomUUID()
+    const createdAt = new Date().toISOString()
+    const startTimes = new Map<string, number>()
+    startTimes.set(originalAdapter.id, Date.now())
+    if (challengerAdapter) {
+      startTimes.set(challengerAdapter.id, Date.now())
+    }
 
     for await (const event of engine.run(question, session.getHistory())) {
       if (event.type === 'classified') {
         intentLine = `[${event.result.shouldMirror ? 'MIRRORING' : 'DIRECT'}] ${
           event.result.category
         } (${Math.round(event.result.confidence * 100)}%)`
+        intentResult = event.result
       }
 
       if (event.type === 'stream_chunk') {
-        const current = results.get(event.brainId) ?? ''
-        results.set(event.brainId, `${current}${event.chunk.delta}`)
+        const current = results.get(event.brainId)
+        const text = `${current?.text ?? ''}${event.chunk.delta}`
+        results.set(event.brainId, {
+          brainId: event.brainId,
+          text,
+          inputTokens: current?.inputTokens,
+          outputTokens: current?.outputTokens,
+          latencyMs: current?.latencyMs
+        })
       }
 
       if (event.type === 'brain_complete') {
-        results.set(event.brainId, event.response.text)
+        const latency =
+          Date.now() - (startTimes.get(event.brainId) ?? Date.now())
+        results.set(event.brainId, {
+          brainId: event.brainId,
+          text: event.response.text,
+          inputTokens: event.response.inputTokens,
+          outputTokens: event.response.outputTokens,
+          latencyMs: latency
+        })
       }
 
       if (event.type === 'error') {
@@ -73,14 +101,27 @@ export async function runMirror(
       process.stdout.write(`${intentLine}\n`)
     }
 
-    const originalText = results.get(originalAdapter.id) ?? ''
+    const originalResult = results.get(originalAdapter.id)
+    const originalText = originalResult?.text ?? ''
     process.stdout.write(`\nORIGINAL (${originalAdapter.id})\n`)
     process.stdout.write(`${originalText}\n`)
 
     if (challengerAdapter) {
-      const challengerText = results.get(challengerAdapter.id) ?? ''
+      const challengerResult = results.get(challengerAdapter.id)
+      const challengerText = challengerResult?.text ?? ''
       process.stdout.write(`\nCHALLENGER (${challengerAdapter.id})\n`)
       process.stdout.write(`${challengerText}\n`)
+    }
+
+    if (originalResult) {
+      addHistoryEntry({
+        id: entryId,
+        createdAt,
+        question,
+        original: originalResult,
+        challenger: challengerAdapter ? results.get(challengerAdapter.id) : undefined,
+        intent: intentResult
+      })
     }
   } catch (error) {
     process.stderr.write(

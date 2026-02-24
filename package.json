@@ -1,7 +1,6 @@
 {
   "name": "adversarial-mirror",
   "version": "0.1.0",
-  "private": true,
   "description": "CLI middleware that mirrors user prompts to an original and adversarial challenger model.",
   "type": "module",
   "bin": {
@@ -10,6 +9,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "package": "pkg . --out-path dist/pkg",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -20,6 +20,7 @@
     "@anthropic-ai/sdk": "^0.32.0",
     "@google/generative-ai": "^0.21.0",
     "chalk": "^5.3.0",
+    "cli-highlight": "^2.1.11",
     "commander": "^12.1.0",
     "conf": "^13.0.0",
     "ink": "^5.1.0",
@@ -30,8 +31,20 @@
   "devDependencies": {
     "@types/node": "^20.11.30",
     "@types/react": "^18.2.79",
+    "pkg": "^5.8.1",
     "tsup": "^8.3.0",
     "typescript": "^5.4.5",
     "vitest": "^2.1.9"
+  },
+  "pkg": {
+    "scripts": "dist/cli.js",
+    "targets": [
+      "node20-win-x64",
+      "node20-linux-x64",
+      "node20-linux-arm64",
+      "node20-macos-x64",
+      "node20-macos-arm64"
+    ],
+    "outputPath": "dist/pkg"
   }
 }

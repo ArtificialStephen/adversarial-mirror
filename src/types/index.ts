@@ -54,6 +54,23 @@ export interface IntentResult {
   reason: string
 }
 
+export interface BrainResult {
+  brainId: string
+  text: string
+  inputTokens?: number
+  outputTokens?: number
+  latencyMs?: number
+}
+
+export interface HistoryEntry {
+  id: string
+  createdAt: string
+  question: string
+  original: BrainResult
+  challenger?: BrainResult
+  intent?: IntentResult
+}
+
 export type Intensity = 'mild' | 'moderate' | 'aggressive'
 
 export type MirrorEvent =

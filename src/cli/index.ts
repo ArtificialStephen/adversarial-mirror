@@ -1,12 +1,21 @@
 import { Command } from 'commander'
 import { runChat } from './commands/chat.js'
 import { runMirror } from './commands/mirror.js'
-import { runConfig } from './commands/config.js'
+import {
+  runConfigInit,
+  runConfigSet,
+  runConfigShow
+} from './commands/config.js'
 import {
   runBrainsAdd,
   runBrainsList,
   runBrainsTest
 } from './commands/brains.js'
+import {
+  runHistoryExport,
+  runHistoryList,
+  runHistoryShow
+} from './commands/history.js'
 
 const program = new Command()
 
@@ -32,13 +41,27 @@ program
   .action(runMirror)
 
 const config = program.command('config').description('Config commands')
-config.action(runConfig)
-config.command('show').description('Show current config').action(runConfig)
+config.action(runConfigShow)
+config.command('show').description('Show current config').action(runConfigShow)
+config.command('init').description('Interactive setup wizard').action(runConfigInit)
+config
+  .command('set <key> <value>')
+  .description('Set config value by key path')
+  .action(runConfigSet)
 
 const brains = program.command('brains').description('Brain management commands')
 brains.action(runBrainsList)
 brains.command('list').description('List configured brains').action(runBrainsList)
 brains.command('test <id>').description('Test a brain').action(runBrainsTest)
 brains.command('add').description('Add a new brain').action(runBrainsAdd)
+
+const history = program.command('history').description('History commands')
+history.action(runHistoryList)
+history.command('list').description('List history').action(runHistoryList)
+history.command('show <id>').description('Show history entry').action(runHistoryShow)
+history
+  .command('export <id> <file>')
+  .description('Export history entry to a file')
+  .action(runHistoryExport)
 
 program.parse()

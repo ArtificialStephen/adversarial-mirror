@@ -13,6 +13,7 @@ export interface MirrorEngineOptions {
   intensity: Intensity
   autoClassify: boolean
   classifier: IntentClassifier
+  debug?: boolean
 }
 
 export class MirrorEngine {
@@ -21,6 +22,7 @@ export class MirrorEngine {
   private readonly intensity: Intensity
   private readonly autoClassify: boolean
   private readonly classifier: IntentClassifier
+  private readonly debug: boolean
 
   constructor(options: MirrorEngineOptions) {
     this.original = options.original
@@ -28,6 +30,7 @@ export class MirrorEngine {
     this.intensity = options.intensity
     this.autoClassify = options.autoClassify
     this.classifier = options.classifier
+    this.debug = options.debug ?? false
   }
 
   async *run(
@@ -37,9 +40,21 @@ export class MirrorEngine {
     try {
       if (this.autoClassify) {
         yield { type: 'classifying' }
-        const result = await this.classifier.classify(userInput)
+        let result
+        try {
+          result = await this.classifier.classify(userInput)
+        } catch (error) {
+          this.log(`Classifier error: ${(error as Error).message}`)
+          result = {
+            category: 'analysis' as const,
+            shouldMirror: true,
+            confidence: 0,
+            reason: 'Classifier error; defaulting to mirror.'
+          }
+        }
         yield { type: 'classified', result }
         if (!result.shouldMirror || !this.challenger) {
+          this.log('Classifier chose direct path.')
           yield* this.runSingle(userInput, history)
           return
         }
@@ -62,7 +77,7 @@ export class MirrorEngine {
   ): AsyncGenerator<MirrorEvent, void> {
     const messages = [...history, { role: 'user', content: userInput }]
     const systemPrompt = buildOriginalPrompt()
-    const stream = this.original.chat(messages, systemPrompt)
+    const stream = this.streamWithRetry(this.original, messages, systemPrompt)
     const accumulator = createAccumulator()
 
     for await (const chunk of stream) {
@@ -95,8 +110,13 @@ export class MirrorEngine {
     ]
     const originalPrompt = buildOriginalPrompt()
     const challengerPrompt = buildChallengerPrompt(this.intensity)
-    const originalStream = this.original.chat(originalMessages, originalPrompt)
-    const challengerStream = this.challenger!.chat(
+    const originalStream = this.streamWithRetry(
+      this.original,
+      originalMessages,
+      originalPrompt
+    )
+    const challengerStream = this.streamWithRetry(
+      this.challenger!,
       challengerMessages,
       challengerPrompt
     )
@@ -130,7 +150,42 @@ export class MirrorEngine {
     }
     yield { type: 'all_complete' }
   }
+  private async *streamWithRetry(
+    adapter: BrainAdapter,
+    messages: ConversationMessage[],
+    systemPrompt: string,
+    retries = 1
+  ): AsyncGenerator<
+    { delta: string; isFinal: boolean; inputTokens?: number; outputTokens?: number },
+    { text: string; inputTokens?: number; outputTokens?: number }
+  > {
+    let attempt = 0
+    while (true) {
+      try {
+        if (attempt > 0) {
+          this.log(`Retrying ${adapter.id} (attempt ${attempt + 1}).`)
+        }
+        const stream = adapter.chat(messages, systemPrompt)
+        for await (const chunk of stream) {
+          yield chunk
+        }
+        return { text: '' }
+      } catch (error) {
+        if (attempt >= retries) {
+          throw error
+        }
+        attempt += 1
+        await delay(300 * attempt)
+      }
+    }
+  }
 
+  private log(message: string): void {
+    if (!this.debug) {
+      return
+    }
+    process.stderr.write(`[debug] ${message}\n`)
+  }
 }
 
 type StreamChunk = {
@@ -197,4 +252,8 @@ async function* mergeStreams(
     }
     current.next = current.entry.stream.next()
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
