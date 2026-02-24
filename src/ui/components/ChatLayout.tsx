@@ -10,7 +10,7 @@ interface ChatLayoutProps {
 export function ChatLayout({
   children,
   layout = 'side-by-side',
-  breakpoint = 100
+  breakpoint = 90
 }: ChatLayoutProps): JSX.Element {
   const { stdout } = useStdout()
   const columns = stdout?.columns ?? 120

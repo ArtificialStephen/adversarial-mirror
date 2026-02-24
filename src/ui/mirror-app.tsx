@@ -78,14 +78,14 @@ export function MirrorApp({
   const headerLines =
     columns >= 96
       ? [
-          '  ___      _                               _       _ _           __  __ _           ',
-          ' / _ \\__ _| |_ ___ _ __ ___  _ __   ___  _| |_ __ (_) | ___     |  \\/  (_)_ __ _ __ ',
-          "| | | / _` | __/ _ \\ '_ ` _ \\| '_ \\ / _ \\| | | '_ \\| | |/ _ \\    | |\\/| | | '__| '__|",
-          '| |_| | (_| | ||  __/ | | | | | | | (_) | | | | | | | |  __/    | |  | | | |  | |   ',
-          ' \\___/ \\__,_|\\__\\___|_| |_| |_| |_|\\___/|_|_|_| |_|_|_|\\___|    |_|  |_|_|_|  |_|   ',
-          `                      DUEL MODE | Intensity: ${intensity.toUpperCase()}`
+          '   ___       __                        _        _        ___             __ ',
+          '  / _ | ___ / /____ ____  ___  ___  __(_)__  __ / /  ___ / _ \\ ___  ___  / / ',
+          ' / __ |/ -_) __/ -_) __/ / _ \\/ _ \\/ / / _ \\/ // /__/ -_) , _/(_-< / _ \\/ /  ',
+          '/_/ |_|\\__/\\__/\\__/_/   /_//_/ .__/_/ /_//_/\\___/\\___/_/|_/ /___/ \\___/_/   ',
+          '                          /_/        |_|                                      ',
+          `                          Intensity: ${intensity.toUpperCase()}`
         ]
-      : ['ADVERSARIAL MIRROR', `DUEL MODE | Intensity: ${intensity.toUpperCase()}`]
+      : ['ADVERSARIAL MIRROR', `Intensity: ${intensity.toUpperCase()}`]
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -296,6 +296,13 @@ export function MirrorApp({
     [challengerTurns, formatText]
   )
 
+  const showSideBySide = layout !== 'stacked' && columns >= 90 && showChallenger
+  const panelGap = showSideBySide ? 2 : 0
+  const panelWidth =
+    showSideBySide && columns >= 90
+      ? Math.floor((columns - panelGap) / 2)
+      : undefined
+
   return (
     <Box flexDirection="column">
       <Box flexDirection="column">
@@ -303,7 +310,7 @@ export function MirrorApp({
           <Text key={`header-${index}`} bold={index === 0}>
             {index === headerLines.length - 1
               ? renderMutedLine(line)
-              : renderGradientLine(line)}
+              : renderGradientLine(line, index)}
           </Text>
         ))}
       </Box>
@@ -320,7 +327,11 @@ export function MirrorApp({
       )}
       <Box marginTop={1}>
         <ChatLayout layout={layout}>
-          <BrainPanel title={`ORIGINAL  ${originalId}`}>
+          <BrainPanel
+            title={`ORIGINAL  ${originalId}`}
+            width={panelWidth}
+            marginRight={showSideBySide ? 2 : 0}
+          >
             {originalRendered}
             {isThinking && currentOriginal && (
               <Box flexDirection="column" marginTop={1}>
@@ -330,7 +341,7 @@ export function MirrorApp({
             )}
           </BrainPanel>
           {showChallenger && (
-            <BrainPanel title={`CHALLENGER  ${challengerId}`}>
+            <BrainPanel title={`CHALLENGER  ${challengerId}`} width={panelWidth}>
               {challengerRendered}
               {isThinking && currentChallenger && (
                 <Box flexDirection="column" marginTop={1}>
@@ -362,27 +373,16 @@ function formatTokens(
   return `${input}/${output} tok`
 }
 
-function renderGradientLine(line: string): JSX.Element {
+function renderGradientLine(line: string, index: number): JSX.Element {
   const palette: Array<React.ComponentProps<typeof Text>['color']> = [
     'cyan',
     'blue',
     'magenta',
-    'yellow'
+    'yellow',
+    'white'
   ]
-  const segLength = Math.max(1, Math.ceil(line.length / palette.length))
-  const segments: JSX.Element[] = []
-
-  for (let i = 0; i < line.length; i += segLength) {
-    const segment = line.slice(i, i + segLength)
-    const color = palette[Math.min(palette.length - 1, Math.floor(i / segLength))]
-    segments.push(
-      <Text key={`seg-${i}`} color={color}>
-        {segment}
-      </Text>
-    )
-  }
-
-  return <Text>{segments}</Text>
+  const color = palette[index % palette.length]
+  return <Text color={color}>{line}</Text>
 }
 
 function renderMutedLine(line: string): JSX.Element {
