@@ -31,7 +31,7 @@ export const defaultConfig: AppConfig = {
     {
       id: 'gemini-pro',
       provider: 'gemini',
-      model: 'gemini-1.5-pro',
+      model: 'gemini-2.5-pro',
       apiKeyEnvVar: 'GOOGLE_API_KEY'
     }
   ],
