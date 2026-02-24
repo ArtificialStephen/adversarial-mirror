@@ -106,7 +106,7 @@ function ExchangeView({
   exchange: CompletedExchange; originalId: string; challengerId?: string
 }): JSX.Element {
   const sideBySide = exchange.isMirrored && Boolean(exchange.challenger) && exchange.columns >= 80
-  const panelWidth = sideBySide ? Math.floor((exchange.columns - 1) / 2) : undefined
+  const panelWidth = sideBySide ? Math.floor((exchange.columns - 1) / 2) : exchange.columns
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -123,7 +123,6 @@ function ExchangeView({
       <Box marginTop={1} flexDirection={sideBySide ? 'row' : 'column'}>
         <BrainPanel
           title={`ORIGINAL  ${originalId}`}
-          flex={!sideBySide}
           width={panelWidth}
           marginRight={sideBySide ? 1 : 0}
         >
@@ -132,7 +131,6 @@ function ExchangeView({
         {exchange.isMirrored && exchange.challenger && (
           <BrainPanel
             title={`CHALLENGER  ${challengerId}`}
-            flex={!sideBySide}
             width={panelWidth}
           >
             <Text wrap="wrap">{exchange.challenger}</Text>
@@ -255,7 +253,10 @@ export function MirrorApp({
   // ── Layout ───────────────────────────────────────────────────────────────────
   const showChallengerPanel = Boolean(challengerId) && (intent?.shouldMirror ?? true)
   const showSideBySide = showChallengerPanel && columns >= 80
-  const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : undefined
+  // Always give BrainPanel an explicit pixel width so its border spans the full
+  // terminal in single-brain mode. Without this, flex + content-sized layout
+  // causes the border to hug the text rather than the terminal edge.
+  const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : columns
 
   const formatText = useCallback(
     (text: string) => (syntaxHighlighting ? highlightCodeBlocks(text) : text),
@@ -495,7 +496,6 @@ export function MirrorApp({
           <Box marginTop={1} flexDirection={showSideBySide ? 'row' : 'column'}>
             <BrainPanel
               title={`ORIGINAL  ${originalId}`}
-              flex={!showSideBySide}
               width={panelWidth}
               marginRight={showSideBySide && showChallengerPanel ? 1 : 0}
             >
@@ -505,7 +505,6 @@ export function MirrorApp({
             {showChallengerPanel && (
               <BrainPanel
                 title={`CHALLENGER  ${challengerId}  [${intensity}]`}
-                flex={!showSideBySide}
                 width={panelWidth}
               >
                 <StreamingText value={currentChallenger} />
