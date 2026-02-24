@@ -76,16 +76,16 @@ export function MirrorApp({
   }, [])
 
   const headerLines =
-    columns >= 96
+    columns >= 90
       ? [
-          '   ___       __                        _        _        ___             __ ',
-          '  / _ | ___ / /____ ____  ___  ___  __(_)__  __ / /  ___ / _ \\ ___  ___  / / ',
-          ' / __ |/ -_) __/ -_) __/ / _ \\/ _ \\/ / / _ \\/ // /__/ -_) , _/(_-< / _ \\/ /  ',
-          '/_/ |_|\\__/\\__/\\__/_/   /_//_/ .__/_/ /_//_/\\___/\\___/_/|_/ /___/ \\___/_/   ',
-          '                          /_/        |_|                                      ',
-          `                          Intensity: ${intensity.toUpperCase()}`
+          '    _    __  __ ___ ____  ____   ___   ____ ',
+          '   / \\  |  \\/  |_ _|  _ \\|  _ \\ / _ \\ / ___|',
+          '  / _ \\ | |\\/| || || |_) | |_) | | | | |    ',
+          ' / ___ \\| |  | || ||  _ <|  _ <| |_| | |___ ',
+          '/_/   \\_\\_|  |_|___|_| \\_\\_| \\_\\\\___/ \\____|',
+          `                 A-MIRROR | Intensity: ${intensity.toUpperCase()}`
         ]
-      : ['ADVERSARIAL MIRROR', `Intensity: ${intensity.toUpperCase()}`]
+      : ['A-MIRROR', `Intensity: ${intensity.toUpperCase()}`]
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -296,12 +296,12 @@ export function MirrorApp({
     [challengerTurns, formatText]
   )
 
-  const showSideBySide = layout !== 'stacked' && columns >= 90 && showChallenger
-  const panelGap = showSideBySide ? 2 : 0
-  const panelWidth =
-    showSideBySide && columns >= 90
-      ? Math.floor((columns - panelGap) / 2)
-      : undefined
+  const showSideBySide = showChallenger && columns >= 100
+  const panelGap = showSideBySide ? 1 : 0
+  const panelWidth = showSideBySide
+    ? Math.floor((columns - panelGap) / 2)
+    : undefined
+  const effectiveLayout = showSideBySide ? 'side-by-side' : 'stacked'
 
   return (
     <Box flexDirection="column">
@@ -326,11 +326,11 @@ export function MirrorApp({
         </Box>
       )}
       <Box marginTop={1}>
-        <ChatLayout layout={layout}>
+        <ChatLayout layout={effectiveLayout} breakpoint={100}>
           <BrainPanel
             title={`ORIGINAL  ${originalId}`}
             width={panelWidth}
-            marginRight={showSideBySide ? 2 : 0}
+            marginRight={showSideBySide ? 1 : 0}
           >
             {originalRendered}
             {isThinking && currentOriginal && (
@@ -378,8 +378,8 @@ function renderGradientLine(line: string, index: number): JSX.Element {
     'cyan',
     'blue',
     'magenta',
-    'yellow',
-    'white'
+    'green',
+    'cyan'
   ]
   const color = palette[index % palette.length]
   return <Text color={color}>{line}</Text>
