@@ -66,6 +66,7 @@ export function MirrorApp({
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { stdout } = useStdout()
   const [columns, setColumns] = useState(stdout?.columns ?? 120)
+  const lastColumnsRef = useRef(columns)
 
   useEffect(() => {
     if (!stdout) {
@@ -78,6 +79,10 @@ export function MirrorApp({
       }
       const next = stdout.columns ?? 120
       resizeTimerRef.current = setTimeout(() => {
+        if (next < lastColumnsRef.current) {
+          clearTerminal(stdout)
+        }
+        lastColumnsRef.current = next
         setColumns(next)
         resizeTimerRef.current = null
       }, 60)
@@ -486,6 +491,13 @@ function fitLineToColumns(line: string, columns: number): string {
     return line
   }
   return line.slice(0, columns)
+}
+
+function clearTerminal(stdout: NodeJS.WriteStream): void {
+  if (!stdout.isTTY) {
+    return
+  }
+  stdout.write('\x1b[2J\x1b[H')
 }
 
 function resampleLine(line: string, sourceWidth: number, targetWidth: number): string {
