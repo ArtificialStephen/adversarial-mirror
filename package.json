@@ -6,13 +6,18 @@
   "bin": {
     "mirror": "dist/cli.js"
   },
+  "files": [
+    "dist/"
+  ],
   "scripts": {
     "build": "tsup",
+    "postbuild": "node --input-type=module -e \"import{copyFileSync}from'node:fs';try{copyFileSync('src/ui/header.txt','dist/header.txt')}catch{}\"",
     "dev": "tsup --watch",
     "dev:chat": "node dist/cli.js chat",
     "homebrew:generate": "node scripts/generate-homebrew.mjs",
     "package": "pkg . --out-path dist/pkg",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest"
   },
   "engines": {
@@ -21,7 +26,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
     "@google/generative-ai": "^0.21.0",
-    "chalk": "^5.3.0",
     "cli-highlight": "^2.1.11",
     "commander": "^12.1.0",
     "conf": "^13.0.0",
@@ -33,6 +37,7 @@
   "devDependencies": {
     "@types/node": "^20.11.30",
     "@types/react": "^18.2.79",
+    "@vitest/coverage-v8": "^4.0.18",
     "@yao-pkg/pkg": "^5.12.0",
     "tsup": "^8.3.0",
     "typescript": "^5.4.5",

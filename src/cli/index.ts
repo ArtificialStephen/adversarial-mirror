@@ -64,4 +64,20 @@ history
   .description('Export history entry to a file')
   .action(runHistoryExport)
 
+// Default to 'chat' when no subcommand is given.
+// Appending at the end (after any flags) lets Commander parse global flags at the
+// program level before routing to the chat subcommand. This means:
+//   mirror                   → mirror chat
+//   mirror --intensity aggressive  → mirror --intensity aggressive chat  (global flags preserved)
+//   mirror --help            → shows program help  (not intercepted)
+//   mirror --version         → shows version       (not intercepted)
+const rawArgs = process.argv.slice(2)
+const knownSubcommands = new Set(['chat', 'mirror', 'config', 'brains', 'history'])
+const hasVersionOrHelp = rawArgs.some(a => ['-V', '--version', '-h', '--help'].includes(a))
+const hasSubcommand = rawArgs.some(a => knownSubcommands.has(a))
+
+if (!hasVersionOrHelp && !hasSubcommand) {
+  process.argv.push('chat')
+}
+
 program.parse()
