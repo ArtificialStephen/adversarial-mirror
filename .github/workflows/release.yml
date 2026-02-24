@@ -32,7 +32,7 @@ jobs:
       - name: Build
         run: npm run build
       - name: Package
-        run: npx pkg . --targets ${{ matrix.target }} --out-path dist/pkg
+        run: npx @yao-pkg/pkg . --targets ${{ matrix.target }} --out-path dist/pkg
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
