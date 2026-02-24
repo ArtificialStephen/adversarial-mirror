@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useInput, useStdout } from 'ink'
@@ -62,6 +63,7 @@ export function MirrorApp({
   const pendingChallengerRef = useRef('')
   const liveOriginalRef = useRef('')
   const liveChallengerRef = useRef('')
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { stdout } = useStdout()
   const [columns, setColumns] = useState(stdout?.columns ?? 120)
 
@@ -71,12 +73,22 @@ export function MirrorApp({
     }
 
     const handleResize = () => {
-      setColumns(stdout.columns ?? 120)
+      if (resizeTimerRef.current) {
+        clearTimeout(resizeTimerRef.current)
+      }
+      const next = stdout.columns ?? 120
+      resizeTimerRef.current = setTimeout(() => {
+        setColumns(next)
+        resizeTimerRef.current = null
+      }, 60)
     }
 
     handleResize()
     stdout.on('resize', handleResize)
     return () => {
+      if (resizeTimerRef.current) {
+        clearTimeout(resizeTimerRef.current)
+      }
       stdout.off('resize', handleResize)
     }
   }, [stdout])
@@ -391,25 +403,49 @@ function formatTokens(
 }
 
 function loadHeaderArt(): string[] {
-  const candidateFiles = ['header.txt', 'hEADER.txt']
+  const cwd = process.cwd()
+  const candidateFiles = [
+    resolve(cwd, 'src', 'ui', 'header.txt'),
+    resolve(cwd, 'src', 'ui', 'hEADER.txt'),
+    resolve(cwd, 'header.txt'),
+    resolve(cwd, 'hEADER.txt')
+  ]
 
   for (const filename of candidateFiles) {
+    if (!existsSync(filename)) {
+      continue
+    }
+    try {
+      const contents = readFileSync(filename, 'utf8')
+      return cleanHeaderLines(contents)
+    } catch {
+      continue
+    }
+  }
+
+  const moduleCandidates = ['header.txt', 'hEADER.txt']
+  for (const filename of moduleCandidates) {
     try {
       const headerPath = fileURLToPath(new URL(`./${filename}`, import.meta.url))
+      if (!existsSync(headerPath)) {
+        continue
+      }
       const contents = readFileSync(headerPath, 'utf8')
-      const lines = contents.split(/\r?\n/)
-      while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-        lines.pop()
-      }
-      if (lines.length > 0) {
-        return lines
-      }
+      return cleanHeaderLines(contents)
     } catch {
       continue
     }
   }
 
   return []
+}
+
+function cleanHeaderLines(contents: string): string[] {
+  const lines = contents.split(/\r?\n/)
+  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+    lines.pop()
+  }
+  return lines
 }
 
 function fitHeaderArt(lines: string[], columns: number): string[] {
@@ -433,7 +469,7 @@ function fitHeaderArt(lines: string[], columns: number): string[] {
   }
 
   if (maxWidth <= columns) {
-    return aligned
+    return aligned.map((line) => line.padEnd(maxWidth, ' '))
   }
 
   const targetWidth = Math.max(1, Math.min(columns, maxWidth))
@@ -442,10 +478,10 @@ function fitHeaderArt(lines: string[], columns: number): string[] {
 
 function resampleLine(line: string, sourceWidth: number, targetWidth: number): string {
   if (targetWidth >= sourceWidth) {
-    return line.padEnd(sourceWidth, ' ').slice(0, targetWidth).replace(/\s+$/, '')
+    return line.padEnd(sourceWidth, ' ').slice(0, targetWidth)
   }
   if (targetWidth <= 1) {
-    return line[0] ?? ''
+    return (line[0] ?? '').padEnd(targetWidth, ' ')
   }
 
   const padded = line.padEnd(sourceWidth, ' ')
@@ -458,7 +494,7 @@ function resampleLine(line: string, sourceWidth: number, targetWidth: number): s
     out[x] = padded[sourceIndex]
   }
 
-  return out.join('').replace(/\s+$/, '')
+  return out.join('')
 }
 
 function renderMutedLine(line: string): JSX.Element {
