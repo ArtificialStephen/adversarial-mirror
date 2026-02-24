@@ -53,6 +53,7 @@ export function MirrorApp({
   const startTimesRef = useRef<Map<string, number>>(new Map())
   const [originalStats, setOriginalStats] = useState<BrainResult | null>(null)
   const [challengerStats, setChallengerStats] = useState<BrainResult | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -83,6 +84,8 @@ export function MirrorApp({
     let intentResult: IntentResult | undefined
     const entryId = randomUUID()
     const createdAt = new Date().toISOString()
+    const controller = new AbortController()
+    abortRef.current = controller
 
     startTimesRef.current = new Map()
     startTimesRef.current.set(originalId, Date.now())
@@ -91,7 +94,7 @@ export function MirrorApp({
     }
 
     try {
-      for await (const event of engine.run(question, history)) {
+      for await (const event of engine.run(question, history, { signal: controller.signal })) {
         if (event.type === 'classifying') {
           setIntent(null)
         }
@@ -165,11 +168,16 @@ export function MirrorApp({
     } finally {
       setIsThinking(false)
       runningRef.current = false
+      abortRef.current = null
     }
   }, [challengerId, engine, input, originalId, session])
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === 'c') {
+      if (isThinking && abortRef.current) {
+        abortRef.current.abort()
+        return
+      }
       process.exit(0)
     }
 
