@@ -28,7 +28,13 @@ export class OpenAIAdapter implements BrainAdapter {
   }
 
   async ping(): Promise<PingResult> {
-    return { ok: true }
+    const start = Date.now()
+    try {
+      await this.client.models.list()
+      return { ok: true, latencyMs: Date.now() - start }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
   }
 
   async *chat(

@@ -56,7 +56,15 @@ export async function runMirror(
       ...(challengerAdapter ? [[challengerAdapter.id, Date.now()] as [string, number]] : []),
     ])
 
+    // Stream the original response in real time. Buffer the challenger so the
+    // two parallel streams don't interleave into unreadable output.
+    let originalHeaderPrinted = false
+
     for await (const event of engine.run(question, session.getHistory())) {
+      if (event.type === 'classifying') {
+        process.stdout.write('Classifying...\n')
+      }
+
       if (event.type === 'classified') {
         const label = event.result.shouldMirror ? 'MIRRORING' : 'DIRECT'
         process.stdout.write(
@@ -65,15 +73,15 @@ export async function runMirror(
         intentResult = event.result
       }
 
-      if (event.type === 'stream_chunk') {
-        const cur = results.get(event.brainId)
-        results.set(event.brainId, {
-          brainId: event.brainId,
-          text: `${cur?.text ?? ''}${event.chunk.delta}`,
-          inputTokens: cur?.inputTokens,
-          outputTokens: cur?.outputTokens,
-          latencyMs: cur?.latencyMs,
-        })
+      if (event.type === 'stream_chunk' && !event.chunk.isFinal) {
+        if (event.brainId === originalAdapter.id) {
+          if (!originalHeaderPrinted) {
+            process.stdout.write(`\nORIGINAL (${originalAdapter.id})\n`)
+            originalHeaderPrinted = true
+          }
+          process.stdout.write(event.chunk.delta)
+        }
+        // Challenger chunks are buffered; we print the complete text after brain_complete.
       }
 
       if (event.type === 'brain_complete') {
@@ -90,9 +98,8 @@ export async function runMirror(
       if (event.type === 'error') throw event.error
     }
 
-    const originalResult = results.get(originalAdapter.id)
-    process.stdout.write(`\nORIGINAL (${originalAdapter.id})\n`)
-    process.stdout.write(`${originalResult?.text ?? ''}\n`)
+    // Ensure original output ends with a newline before challenger block.
+    if (originalHeaderPrinted) process.stdout.write('\n')
 
     if (challengerAdapter) {
       const challengerResult = results.get(challengerAdapter.id)

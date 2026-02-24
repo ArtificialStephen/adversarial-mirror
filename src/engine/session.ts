@@ -26,8 +26,10 @@ export class Session {
 
   private push(message: ConversationMessage): void {
     this.messages.push(message)
-    if (this.messages.length > this.maxHistory) {
-      this.messages.splice(0, this.messages.length - this.maxHistory)
+    // Evict oldest Q&A pair at a time so the buffer never starts with an
+    // assistant message that has no preceding user turn (which causes API errors).
+    while (this.messages.length > this.maxHistory) {
+      this.messages.splice(0, 2)
     }
   }
 }

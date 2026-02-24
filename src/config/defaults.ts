@@ -29,6 +29,12 @@ export const defaultConfig: AppConfig = {
       apiKeyEnvVar: 'OPENAI_API_KEY'
     },
     {
+      id: 'o3-mini',
+      provider: 'openai',
+      model: 'o3-mini',
+      apiKeyEnvVar: 'OPENAI_API_KEY'
+    },
+    {
       id: 'gemini-pro',
       provider: 'gemini',
       model: 'gemini-2.5-pro',

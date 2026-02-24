@@ -30,15 +30,30 @@ describe('Session', () => {
     expect(s.getHistory()).toHaveLength(3)
   })
 
-  it('truncates oldest messages when exceeding maxHistory', () => {
-    const s = new Session(3)
+  it('evicts the oldest Q&A pair when exceeding maxHistory', () => {
+    // maxHistory=4 with 2 pairs: fits exactly. Adding a 3rd pair evicts the first.
+    const s = new Session(4)
     s.addUser('q1')
     s.addAssistant('a1')
     s.addUser('q2')
-    s.addAssistant('a2') // now 4 messages, limit 3 → oldest evicted
+    s.addAssistant('a2')
+    s.addUser('q3')
+    s.addAssistant('a3') // 6 messages → evict pair 1 → [q2, a2, q3, a3]
     const history = s.getHistory()
-    expect(history).toHaveLength(3)
-    expect(history[0]).toEqual({ role: 'assistant', content: 'a1' })
+    expect(history).toHaveLength(4)
+    expect(history[0]).toEqual({ role: 'user', content: 'q2' })
+    expect(history[history.length - 1]).toEqual({ role: 'assistant', content: 'a3' })
+  })
+
+  it('history never starts with an assistant message', () => {
+    // Pair eviction means we may drop below maxHistory to avoid orphaned responses.
+    const s = new Session(3) // odd limit — pairs of 2 cannot fill exactly
+    s.addUser('q1')
+    s.addAssistant('a1')
+    s.addUser('q2')
+    s.addAssistant('a2') // 4 messages > 3 → evict pair → [q2, a2]
+    const history = s.getHistory()
+    expect(history[0].role).toBe('user')
   })
 
   it('clear empties all messages', () => {
@@ -49,12 +64,15 @@ describe('Session', () => {
     expect(s.getHistory()).toHaveLength(0)
   })
 
-  it('respects a window of 1 (just the most recent message)', () => {
-    const s = new Session(1)
-    s.addUser('first')
-    s.addUser('second')
+  it('keeps the most recent pair when window equals one pair', () => {
+    const s = new Session(2)
+    s.addUser('q1')
+    s.addAssistant('a1')
+    s.addUser('q2')
+    s.addAssistant('a2') // evicts first pair → [q2, a2]
     const history = s.getHistory()
-    expect(history).toHaveLength(1)
-    expect(history[0].content).toBe('second')
+    expect(history).toHaveLength(2)
+    expect(history[0].content).toBe('q2')
+    expect(history[1].content).toBe('a2')
   })
 })

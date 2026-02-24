@@ -92,8 +92,14 @@ export GOOGLE_API_KEY=AIza...
 | Provider | Example models | Env var |
 |---|---|---|
 | Anthropic | `claude-sonnet-4-6`, `claude-opus-4-6` | `ANTHROPIC_API_KEY` |
-| OpenAI | `gpt-4o`, `gpt-4-turbo` | `OPENAI_API_KEY` |
+| OpenAI | `gpt-4o`, `o3-mini`, `o3` | `OPENAI_API_KEY` |
 | Google | `gemini-2.5-pro`, `gemini-1.5-pro` | `GOOGLE_API_KEY` |
+
+**Tip:** `o3-mini` is the recommended challenger brain if you have OpenAI access. Its step-by-step reasoning produces sharper adversarial analysis than `gpt-4o`. To switch:
+
+```bash
+mirror config set session.challengerBrainId o3-mini
+```
 
 Mix and match — the original and challenger can use different providers.
 
