@@ -65,11 +65,10 @@ export function MirrorApp({
   const { stdout } = useStdout()
   const columns = stdout?.columns ?? 120
 
-  const headerArtWidth =
-    headerArt.length > 0
-      ? Math.max(...headerArt.map((line) => line.length))
-      : 0
-  const canUseHeaderArt = headerArt.length > 0 && columns >= headerArtWidth
+  const fittedHeaderArt = useMemo(
+    () => fitHeaderArt(headerArt, columns),
+    [columns]
+  )
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -85,8 +84,8 @@ export function MirrorApp({
     return () => clearInterval(timer)
   }, [])
 
-  const headerLines = canUseHeaderArt
-    ? [...headerArt, 'Adversarial Mirror']
+  const headerLines = fittedHeaderArt.length > 0
+    ? [...fittedHeaderArt, 'Adversarial Mirror']
     : ['A - MIRROR', 'Adversarial Mirror']
 
   const submit = useCallback(async () => {
@@ -395,6 +394,55 @@ function loadHeaderArt(): string[] {
   }
 
   return []
+}
+
+function fitHeaderArt(lines: string[], columns: number): string[] {
+  if (lines.length === 0 || columns <= 0) {
+    return []
+  }
+
+  const trimmed = lines.map((line) => line.replace(/\s+$/, ''))
+  const nonEmpty = trimmed.filter((line) => line.trim().length > 0)
+  const minIndent =
+    nonEmpty.length > 0
+      ? Math.min(...nonEmpty.map((line) => line.match(/^\s*/)?.[0].length ?? 0))
+      : 0
+  const aligned =
+    minIndent > 0 ? trimmed.map((line) => line.slice(minIndent)) : trimmed
+  const maxWidth =
+    aligned.length > 0 ? Math.max(...aligned.map((line) => line.length)) : 0
+
+  if (maxWidth === 0) {
+    return []
+  }
+
+  if (maxWidth <= columns) {
+    return aligned
+  }
+
+  const targetWidth = Math.max(1, Math.min(columns, maxWidth))
+  return aligned.map((line) => resampleLine(line, maxWidth, targetWidth))
+}
+
+function resampleLine(line: string, sourceWidth: number, targetWidth: number): string {
+  if (targetWidth >= sourceWidth) {
+    return line.padEnd(sourceWidth, ' ').slice(0, targetWidth).replace(/\s+$/, '')
+  }
+  if (targetWidth <= 1) {
+    return line[0] ?? ''
+  }
+
+  const padded = line.padEnd(sourceWidth, ' ')
+  const out = new Array(targetWidth)
+  const lastSource = sourceWidth - 1
+  const lastTarget = targetWidth - 1
+
+  for (let x = 0; x < targetWidth; x += 1) {
+    const sourceIndex = Math.round((x / lastTarget) * lastSource)
+    out[x] = padded[sourceIndex]
+  }
+
+  return out.join('').replace(/\s+$/, '')
 }
 
 function renderMutedLine(line: string): JSX.Element {
