@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Box, Static, Text, useInput, useStdout } from 'ink'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Box, Text, useInput, useStdout } from 'ink'
 import type { BrainResult, IntentResult } from '../types/index.js'
 import type { MirrorEngine } from '../engine/mirror-engine.js'
 import { Session } from '../engine/session.js'
@@ -76,16 +76,19 @@ export function MirrorApp({
   }, [])
 
   const headerLines =
-    columns >= 90
+    columns >= 96
       ? [
-          '  ___      _                                  _ _           __  __ _                         ',
-          ' / _ \\__ _| |_ ___ _ __ ___  _ __   ___  _ __ (_) | ___     |  \\/  (_)_ __ _ __ ___  _ __ ',
-          "| | | / _` | __/ _ \\ '_ ` _ \\| '_ \\ / _ \\| '_ \\| | |/ _ \\    | |\\/| | | '__| '__/ _ \\| '__|",
-          '| |_| | (_| | ||  __/ | | | | | | | (_) | | | | | |  __/    | |  | | | |  | | | (_) | |   ',
-          ' \\___/ \\__,_|\\__\\___|_| |_| |_| |_|\\___/|_| |_|_|_|\\___|    |_|  |_|_|_|  |_|  \\___/|_|   ',
-          `                     DUEL MODE | Intensity: ${intensity.toUpperCase()}`
+          '    ___        __                                _           _   _  __  __ _                      ',
+          '   /   | _____/ /___ _ _ __ ___  __ _ _ __ ___ (_) | ___   _| | | ||  \\/  (_)_ __ _ __ ___  _ __',
+          "  / /| |/ ___/ / __ `// `__/ _ \\/ _` | `_ ` _ \\| | |/ / | | | | | || |\\/| | | `__| `__/ _ \\| `__|",
+          ' / ___ / /__/ / /_/ / / /  __/ (_| | | | | | | |   <| |_| | |_| | || |  | | | |  | | | (_) | |  ',
+          '/_/  |_\\___/_/\\__,_/_/  \\___|\\__,_|_| |_| |_| |_|_|\\_\\\\__,_|\\___/ |_|  |_|_|_|  |_|  \\___/|_|  ',
+          `                           DUEL MODE | Intensity: ${intensity.toUpperCase()}`
         ]
-      : ['ADVERSARIAL MIRROR', `DUEL MODE | Intensity: ${intensity.toUpperCase()}`]
+      : [
+          'ADVERSARIAL MIRROR',
+          `DUEL MODE | Intensity: ${intensity.toUpperCase()}`
+        ]
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -274,6 +277,28 @@ export function MirrorApp({
   statusSegments.push('Enter to submit, Ctrl+C to exit')
   const statusText = statusSegments.join(' | ')
 
+  const originalRendered = useMemo(
+    () =>
+      originalTurns.map((turn, index) => (
+        <Box key={`orig-${index}`} flexDirection="column" marginTop={1}>
+          <Text color="cyan">Q: {turn.question}</Text>
+          <Text>A: {formatText(turn.answer)}</Text>
+        </Box>
+      )),
+    [originalTurns, formatText]
+  )
+
+  const challengerRendered = useMemo(
+    () =>
+      challengerTurns.map((turn, index) => (
+        <Box key={`chal-${index}`} flexDirection="column" marginTop={1}>
+          <Text color="cyan">Q: {turn.question}</Text>
+          <Text>A: {formatText(turn.answer)}</Text>
+        </Box>
+      )),
+    [challengerTurns, formatText]
+  )
+
   return (
     <Box flexDirection="column">
       <Box flexDirection="column">
@@ -301,14 +326,7 @@ export function MirrorApp({
       <Box marginTop={1}>
         <ChatLayout layout={layout}>
           <BrainPanel title={`ORIGINAL  ${originalId}`}>
-            <Static items={originalTurns}>
-              {(turn, index) => (
-                <Box key={`orig-${index}`} flexDirection="column" marginTop={1}>
-                  <Text color="cyan">Q: {turn.question}</Text>
-                  <Text>A: {formatText(turn.answer)}</Text>
-                </Box>
-              )}
-            </Static>
+            {originalRendered}
             {isThinking && currentOriginal && (
               <Box flexDirection="column" marginTop={1}>
                 <Text color="cyan">Q: {activeQuestion}</Text>
@@ -318,14 +336,7 @@ export function MirrorApp({
           </BrainPanel>
           {showChallenger && (
             <BrainPanel title={`CHALLENGER  ${challengerId}`}>
-              <Static items={challengerTurns}>
-                {(turn, index) => (
-                  <Box key={`chal-${index}`} flexDirection="column" marginTop={1}>
-                    <Text color="cyan">Q: {turn.question}</Text>
-                    <Text>A: {formatText(turn.answer)}</Text>
-                  </Box>
-                )}
-              </Static>
+              {challengerRendered}
               {isThinking && currentChallenger && (
                 <Box flexDirection="column" marginTop={1}>
                   <Text color="cyan">Q: {activeQuestion}</Text>
