@@ -1,3 +1,4 @@
+import OpenAI from 'openai'
 import type {
   ChatOptions,
   CompletedResponse,
@@ -12,6 +13,7 @@ export class OpenAIAdapter implements BrainAdapter {
   readonly provider = 'openai' as const
   readonly capabilities = { streaming: true }
   private readonly model: string
+  private readonly client: OpenAI
 
   constructor(id: string, model: string, apiKeyEnvVar: string) {
     this.id = id
@@ -22,6 +24,7 @@ export class OpenAIAdapter implements BrainAdapter {
         `Missing API key. Set ${apiKeyEnvVar} or enable MOCK_BRAINS=true.`
       )
     }
+    this.client = new OpenAI({ apiKey })
   }
 
   async ping(): Promise<PingResult> {
@@ -29,12 +32,53 @@ export class OpenAIAdapter implements BrainAdapter {
   }
 
   async *chat(
-    _messages: ConversationMessage[],
-    _systemPrompt: string,
-    _options?: ChatOptions
+    messages: ConversationMessage[],
+    systemPrompt: string,
+    options?: ChatOptions
   ): AsyncGenerator<StreamChunk, CompletedResponse> {
-    const response: CompletedResponse = { text: 'OpenAI adapter not implemented.' }
-    yield { delta: response.text, isFinal: true }
+    const stream = await this.client.chat.completions.create(
+      {
+        model: this.model,
+        stream: true,
+        stream_options: { include_usage: true },
+        temperature: options?.temperature,
+        max_tokens: options?.maxTokens,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages
+            .filter((message) => message.role !== 'system')
+            .map((message) => ({
+              role: message.role === 'assistant' ? 'assistant' : 'user',
+              content: message.content
+            }))
+        ]
+      },
+      { signal: options?.signal }
+    )
+
+    let text = ''
+    let inputTokens: number | undefined
+    let outputTokens: number | undefined
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content ?? ''
+      if (delta) {
+        text += delta
+        yield { delta, isFinal: false }
+      }
+      if (chunk.usage) {
+        inputTokens = chunk.usage.prompt_tokens
+        outputTokens = chunk.usage.completion_tokens
+      }
+    }
+
+    const response: CompletedResponse = {
+      text,
+      inputTokens,
+      outputTokens
+    }
+
+    yield { delta: '', isFinal: true, inputTokens, outputTokens }
     return response
   }
 

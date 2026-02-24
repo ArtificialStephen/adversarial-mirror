@@ -1,3 +1,4 @@
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import type {
   ChatOptions,
   CompletedResponse,
@@ -12,6 +13,7 @@ export class GeminiAdapter implements BrainAdapter {
   readonly provider = 'gemini' as const
   readonly capabilities = { streaming: true }
   private readonly model: string
+  private readonly client: GoogleGenerativeAI
 
   constructor(id: string, model: string, apiKeyEnvVar: string) {
     this.id = id
@@ -22,6 +24,7 @@ export class GeminiAdapter implements BrainAdapter {
         `Missing API key. Set ${apiKeyEnvVar} or enable MOCK_BRAINS=true.`
       )
     }
+    this.client = new GoogleGenerativeAI(apiKey)
   }
 
   async ping(): Promise<PingResult> {
@@ -29,12 +32,56 @@ export class GeminiAdapter implements BrainAdapter {
   }
 
   async *chat(
-    _messages: ConversationMessage[],
-    _systemPrompt: string,
-    _options?: ChatOptions
+    messages: ConversationMessage[],
+    systemPrompt: string,
+    options?: ChatOptions
   ): AsyncGenerator<StreamChunk, CompletedResponse> {
-    const response: CompletedResponse = { text: 'Gemini adapter not implemented.' }
-    yield { delta: response.text, isFinal: true }
+    const model = this.client.getGenerativeModel({ model: this.model })
+    const contents = messages
+      .filter((message) => message.role !== 'system')
+      .map((message) => ({
+        role: message.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: message.content }]
+      }))
+
+    const result = await model.generateContentStream({
+      contents,
+      systemInstruction: {
+        role: 'system',
+        parts: [{ text: systemPrompt }]
+      },
+      generationConfig: {
+        temperature: options?.temperature,
+        maxOutputTokens: options?.maxTokens
+      }
+    })
+
+    let text = ''
+    for await (const chunk of result.stream) {
+      const delta = chunk.text()
+      if (delta) {
+        text += delta
+        yield { delta, isFinal: false }
+      }
+    }
+
+    let inputTokens: number | undefined
+    let outputTokens: number | undefined
+
+    try {
+      const response = await result.response
+      const usage = (response as any).usageMetadata
+      if (usage) {
+        inputTokens = usage.promptTokenCount
+        outputTokens =
+          usage.candidatesTokenCount ?? usage.totalTokenCount ?? undefined
+      }
+    } catch {
+      // usage metadata not available
+    }
+
+    const response: CompletedResponse = { text, inputTokens, outputTokens }
+    yield { delta: '', isFinal: true, inputTokens, outputTokens }
     return response
   }
 
