@@ -78,14 +78,10 @@ export function MirrorApp({
   const headerLines =
     columns >= 90
       ? [
-          '    ___       __  __ _____ ____  ____   ___   ____   ',
-          '   / _ \\     |  \\/  |_   _|  _ \\|  _ \\ / _ \\ / ___|  ',
-          '  / /_\\ \\    | |\\/| | | | | |_) | |_) | | | | |      ',
-          ' /  _  |     | |  | | | | |  _ <|  _ <| |_| | |___   ',
-          '/_/ |_|      |_|  |_| |_| |_| \\_\\_| \\_\\\\___/ \\____|  ',
-          '                Adversarial Mirror'
+          ...buildBlockWord('A - MIRROR'),
+          'Adversarial Mirror'
         ]
-      : ['A-MIRROR', 'Adversarial Mirror']
+      : ['A - MIRROR', 'Adversarial Mirror']
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -310,7 +306,7 @@ export function MirrorApp({
           <Text key={`header-${index}`} bold={index === 0}>
             {index === headerLines.length - 1
               ? renderMutedLine(line)
-              : renderGradientLine(line, index)}
+              : renderOutlineLine(line)}
           </Text>
         ))}
       </Box>
@@ -373,30 +369,19 @@ function formatTokens(
   return `${input}/${output} tok`
 }
 
-function renderGradientLine(line: string, index: number): JSX.Element {
-  const palette: Array<React.ComponentProps<typeof Text>['color']> = [
-    'cyan',
-    'blue',
-    'magenta',
-    'green',
-    'cyan'
-  ]
-  const color = palette[index % palette.length]
-  return <Text color={color}>{line}</Text>
-}
-
 function renderMutedLine(line: string): JSX.Element {
   return <Text color="gray">{line}</Text>
 }
 
 function buildBlockWord(word: string): string[] {
   const glyphs: Record<string, string[]> = {
-    A: [' ### ', '#   #', '#####', '#   #', '#   #'],
-    '-': ['     ', '     ', ' --- ', '     ', '     '],
-    M: ['#   #', '## ##', '# # #', '#   #', '#   #'],
-    I: ['#####', '  #  ', '  #  ', '  #  ', '#####'],
-    R: ['#### ', '#   #', '#### ', '#  ##', '#   #'],
-    O: [' ####', '#   #', '#   #', '#   #', ' ####']
+    A: ['  ___  ', ' / _ \\ ', '/ /_\\ \\', '|  _  |', '|_| |_|'],
+    '-': ['       ', '       ', '  ---  ', '       ', '       '],
+    M: ['|\\/\\/| ', '| |\\ | ', '| | \\| ', '| |  | ', '|_|  |_'],
+    I: [' _____ ', '|_   _|', '  | |  ', '  | |  ', '|_| |_|'],
+    R: [' ____  ', '|  _ \\ ', '| | | |', '| |_/ /', '|_| \\_\\'],
+    O: [' /\\_/\\ ', '|     |', '|     |', '|     |', ' \\___/ '],
+    ' ': ['   ', '   ', '   ', '   ', '   ']
   }
 
   const height = 5
@@ -410,4 +395,8 @@ function buildBlockWord(word: string): string[] {
   }
 
   return lines.map((line) => line.trimEnd())
+}
+
+function renderOutlineLine(line: string): JSX.Element {
+  return <Text color="cyan">{line}</Text>
 }
