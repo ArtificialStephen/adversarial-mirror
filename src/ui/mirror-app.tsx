@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Text, useInput, useStdout } from 'ink'
 import type { BrainResult, IntentResult } from '../types/index.js'
@@ -28,6 +30,8 @@ interface MirrorAppProps {
   showLatency?: boolean
   syntaxHighlighting?: boolean
 }
+
+const headerArt = loadHeaderArt()
 
 export function MirrorApp({
   engine,
@@ -61,6 +65,12 @@ export function MirrorApp({
   const { stdout } = useStdout()
   const columns = stdout?.columns ?? 120
 
+  const headerArtWidth =
+    headerArt.length > 0
+      ? Math.max(...headerArt.map((line) => line.length))
+      : 0
+  const canUseHeaderArt = headerArt.length > 0 && columns >= headerArtWidth
+
   useEffect(() => {
     const timer = setInterval(() => {
       if (pendingOriginalRef.current !== liveOriginalRef.current) {
@@ -75,13 +85,9 @@ export function MirrorApp({
     return () => clearInterval(timer)
   }, [])
 
-  const headerLines =
-    columns >= 90
-      ? [
-          ...buildBlockWord('A - MIRROR'),
-          'Adversarial Mirror'
-        ]
-      : ['A - MIRROR', 'Adversarial Mirror']
+  const headerLines = canUseHeaderArt
+    ? [...headerArt, 'Adversarial Mirror']
+    : ['A - MIRROR', 'Adversarial Mirror']
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -303,11 +309,11 @@ export function MirrorApp({
     <Box flexDirection="column">
       <Box flexDirection="column">
         {headerLines.map((line, index) => (
-          <Text key={`header-${index}`} bold={index === 0}>
+          <React.Fragment key={`header-${index}`}>
             {index === headerLines.length - 1
               ? renderMutedLine(line)
-              : renderOutlineLine(line)}
-          </Text>
+              : renderGradientLine(line, true)}
+          </React.Fragment>
         ))}
       </Box>
       {intent && (
@@ -369,34 +375,97 @@ function formatTokens(
   return `${input}/${output} tok`
 }
 
+function loadHeaderArt(): string[] {
+  const candidateFiles = ['header.txt', 'hEADER.txt']
+
+  for (const filename of candidateFiles) {
+    try {
+      const headerPath = fileURLToPath(new URL(`./${filename}`, import.meta.url))
+      const contents = readFileSync(headerPath, 'utf8')
+      const lines = contents.split(/\r?\n/)
+      while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+        lines.pop()
+      }
+      if (lines.length > 0) {
+        return lines
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return []
+}
+
 function renderMutedLine(line: string): JSX.Element {
   return <Text color="gray">{line}</Text>
 }
 
-function buildBlockWord(word: string): string[] {
-  const glyphs: Record<string, string[]> = {
-    A: ['  ___  ', ' / _ \\ ', '/ /_\\ \\', '|  _  |', '|_| |_|'],
-    '-': ['       ', '       ', '  ---  ', '       ', '       '],
-    M: ['|\\/\\/| ', '| |\\ | ', '| | \\| ', '| |  | ', '|_|  |_'],
-    I: [' _____ ', '|_   _|', '  | |  ', '  | |  ', '|_| |_|'],
-    R: [' ____  ', '|  _ \\ ', '| | | |', '| |_/ /', '|_| \\_\\'],
-    O: [' /\\_/\\ ', '|     |', '|     |', '|     |', ' \\___/ '],
-    ' ': ['   ', '   ', '   ', '   ', '   ']
+const HEADER_GRADIENT_STOPS = [
+  '#00D2FF',
+  '#3A7BD5',
+  '#7F5AF0',
+  '#FF6EC7',
+  '#FFB86C'
+]
+
+function renderGradientLine(line: string, bold = false): JSX.Element {
+  if (line.length === 0) {
+    return <Text bold={bold}>{line}</Text>
   }
 
-  const height = 5
-  const lines = Array.from({ length: height }, () => '')
+  const chars = Array.from(line)
+  const lastIndex = Math.max(chars.length - 1, 1)
 
-  for (const char of word) {
-    const glyph = glyphs[char.toUpperCase()] ?? glyphs['-']
-    for (let i = 0; i < height; i += 1) {
-      lines[i] += `${glyph[i]} `
-    }
-  }
-
-  return lines.map((line) => line.trimEnd())
+  return (
+    <Text bold={bold}>
+      {chars.map((char, index) => (
+        <Text key={`char-${index}`} color={gradientColorAt(index / lastIndex)}>
+          {char}
+        </Text>
+      ))}
+    </Text>
+  )
 }
 
-function renderOutlineLine(line: string): JSX.Element {
-  return <Text color="cyan">{line}</Text>
+function gradientColorAt(position: number): string {
+  const clamped = Math.max(0, Math.min(1, position))
+  const steps = HEADER_GRADIENT_STOPS.length - 1
+  const scaled = clamped * steps
+  const index = Math.min(Math.floor(scaled), steps - 1)
+  const local = scaled - index
+  const from = hexToRgb(HEADER_GRADIENT_STOPS[index])
+  const to = hexToRgb(HEADER_GRADIENT_STOPS[index + 1])
+
+  const red = Math.round(lerp(from.r, to.r, local))
+  const green = Math.round(lerp(from.g, to.g, local))
+  const blue = Math.round(lerp(from.b, to.b, local))
+
+  return rgbToHex(red, green, blue)
+}
+
+function lerp(start: number, end: number, t: number): number {
+  return start + (end - start) * t
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const normalized = hex.replace('#', '')
+  const value = normalized.length === 3
+    ? normalized
+        .split('')
+        .map((char) => char + char)
+        .join('')
+    : normalized
+  const int = Number.parseInt(value, 16)
+  return {
+    r: (int >> 16) & 0xff,
+    g: (int >> 8) & 0xff,
+    b: int & 0xff
+  }
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return `#${[r, g, b]
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('')}`
 }
