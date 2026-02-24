@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Command } from 'commander'
 import { createAdapter } from '../../brains/factory.js'
 import { loadConfig } from '../../config/loader.js'
-import { HeuristicIntentClassifier } from '../../engine/intent-classifier.js'
+import { buildIntentClassifier } from '../../engine/classifier-factory.js'
 import { MirrorEngine } from '../../engine/mirror-engine.js'
 import { Session } from '../../engine/session.js'
 import { addHistoryEntry } from '../../history/store.js'
@@ -38,7 +38,7 @@ export async function runMirror(
         ? createAdapter(challengerConfig)
         : undefined
 
-    const classifier = new HeuristicIntentClassifier()
+    const classifier = buildIntentClassifier(config, Boolean(opts.debug))
     const engine = new MirrorEngine({
       original: originalAdapter,
       challenger: challengerAdapter,
