@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useRef, useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import type { BrainResult, IntentResult } from '../types/index.js'
 import type { MirrorEngine } from '../engine/mirror-engine.js'
@@ -54,12 +54,11 @@ export function MirrorApp({
   const [originalStats, setOriginalStats] = useState<BrainResult | null>(null)
   const [challengerStats, setChallengerStats] = useState<BrainResult | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const [pulse, setPulse] = useState(false)
-
-  useEffect(() => {
-    const timer = setInterval(() => setPulse((prev) => !prev), 450)
-    return () => clearInterval(timer)
-  }, [])
+  const headerLines = [
+    'ADVERSARIAL MIRROR',
+    '[]==[]  ORIGINAL  <== VS ==>  CHALLENGER  []==[]',
+    `DUEL MODE | Intensity: ${intensity.toUpperCase()}`
+  ]
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -246,16 +245,10 @@ export function MirrorApp({
     <Box flexDirection="column">
       <Box flexDirection="column">
         <Text bold color="cyan">
-          ADVERSARIAL MIRROR
+          {headerLines[0]}
         </Text>
-        <Box>
-          <Text color="green">ORIGINAL</Text>
-          <Text color={pulse ? 'red' : 'yellow'}>{'  << VS >>  '}</Text>
-          <Text color="magenta">CHALLENGER</Text>
-        </Box>
-        <Text color="gray">
-          DUEL MODE | Intensity: {intensity.toUpperCase()}
-        </Text>
+        <Text color="yellow">{headerLines[1]}</Text>
+        <Text color="gray">{headerLines[2]}</Text>
       </Box>
       {intent && (
         <Box marginTop={1}>
