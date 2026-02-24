@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "homebrew:generate": "node scripts/generate-homebrew.mjs",
     "package": "pkg . --out-path dist/pkg",
     "test": "vitest run",
     "test:watch": "vitest"

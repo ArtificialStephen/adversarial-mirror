@@ -89,6 +89,16 @@ npm run package
 
 Output lives in dist/pkg.
 
+## Homebrew
+
+After a tagged release is built, generate the Homebrew formula:
+
+```bash
+GITHUB_TOKEN=... node scripts/generate-homebrew.mjs v0.1.0
+```
+
+This writes homebrew/adversarial-mirror.rb with URLs and sha256 hashes.
+
 ## Development
 
 Tests:
