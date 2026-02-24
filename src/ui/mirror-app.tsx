@@ -78,17 +78,14 @@ export function MirrorApp({
   const headerLines =
     columns >= 96
       ? [
-          '    ___        __                                _           _   _  __  __ _                      ',
-          '   /   | _____/ /___ _ _ __ ___  __ _ _ __ ___ (_) | ___   _| | | ||  \\/  (_)_ __ _ __ ___  _ __',
-          "  / /| |/ ___/ / __ `// `__/ _ \\/ _` | `_ ` _ \\| | |/ / | | | | | || |\\/| | | `__| `__/ _ \\| `__|",
-          ' / ___ / /__/ / /_/ / / /  __/ (_| | | | | | | |   <| |_| | |_| | || |  | | | |  | | | (_) | |  ',
-          '/_/  |_\\___/_/\\__,_/_/  \\___|\\__,_|_| |_| |_| |_|_|\\_\\\\__,_|\\___/ |_|  |_|_|_|  |_|  \\___/|_|  ',
-          `                           DUEL MODE | Intensity: ${intensity.toUpperCase()}`
+          '  ___      _                               _       _ _           __  __ _           ',
+          ' / _ \\__ _| |_ ___ _ __ ___  _ __   ___  _| |_ __ (_) | ___     |  \\/  (_)_ __ _ __ ',
+          "| | | / _` | __/ _ \\ '_ ` _ \\| '_ \\ / _ \\| | | '_ \\| | |/ _ \\    | |\\/| | | '__| '__|",
+          '| |_| | (_| | ||  __/ | | | | | | | (_) | | | | | | | |  __/    | |  | | | |  | |   ',
+          ' \\___/ \\__,_|\\__\\___|_| |_| |_| |_|\\___/|_|_|_| |_|_|_|\\___|    |_|  |_|_|_|  |_|   ',
+          `                      DUEL MODE | Intensity: ${intensity.toUpperCase()}`
         ]
-      : [
-          'ADVERSARIAL MIRROR',
-          `DUEL MODE | Intensity: ${intensity.toUpperCase()}`
-        ]
+      : ['ADVERSARIAL MIRROR', `DUEL MODE | Intensity: ${intensity.toUpperCase()}`]
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -303,12 +300,10 @@ export function MirrorApp({
     <Box flexDirection="column">
       <Box flexDirection="column">
         {headerLines.map((line, index) => (
-          <Text
-            key={`header-${index}`}
-            bold={index === 0}
-            color={index === 0 ? 'cyan' : index === headerLines.length - 1 ? 'gray' : 'yellow'}
-          >
-            {line}
+          <Text key={`header-${index}`} bold={index === 0}>
+            {index === headerLines.length - 1
+              ? renderMutedLine(line)
+              : renderGradientLine(line)}
           </Text>
         ))}
       </Box>
@@ -365,4 +360,31 @@ function formatTokens(
   const input = inputTokens ?? 0
   const output = outputTokens ?? 0
   return `${input}/${output} tok`
+}
+
+function renderGradientLine(line: string): JSX.Element {
+  const palette: Array<React.ComponentProps<typeof Text>['color']> = [
+    'cyan',
+    'blue',
+    'magenta',
+    'yellow'
+  ]
+  const segLength = Math.max(1, Math.ceil(line.length / palette.length))
+  const segments: JSX.Element[] = []
+
+  for (let i = 0; i < line.length; i += segLength) {
+    const segment = line.slice(i, i + segLength)
+    const color = palette[Math.min(palette.length - 1, Math.floor(i / segLength))]
+    segments.push(
+      <Text key={`seg-${i}`} color={color}>
+        {segment}
+      </Text>
+    )
+  }
+
+  return <Text>{segments}</Text>
+}
+
+function renderMutedLine(line: string): JSX.Element {
+  return <Text color="gray">{line}</Text>
 }
