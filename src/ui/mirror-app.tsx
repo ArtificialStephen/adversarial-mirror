@@ -78,12 +78,8 @@ export function MirrorApp({
   const headerLines =
     columns >= 90
       ? [
-          '    ___   -   __  __ _____ ____  ____   ___   ____  ',
-          '   / _ \\  -  |  \\/  |_   _|  _ \\|  _ \\ / _ \\ / ___| ',
-          '  / /_\\ \\ -  | |\\/| | | | | |_) | |_) | | | | |     ',
-          ' /  _  | -  | |  | | | | |  _ <|  _ <| |_| | |___  ',
-          '/_/ |_|  -  |_|  |_| |_| |_| \\_\\_| \\_\\\\___/ \\____| ',
-          `             Adversarial Mirror | Intensity: ${intensity.toUpperCase()}`
+          ...buildBlockWord('A-MIRROR'),
+          `Adversarial Mirror | Intensity: ${intensity.toUpperCase()}`
         ]
       : ['A-MIRROR', `Adversarial Mirror | Intensity: ${intensity.toUpperCase()}`]
 
@@ -296,14 +292,12 @@ export function MirrorApp({
     [challengerTurns, formatText]
   )
 
-  const showSideBySide =
-    layout !== 'stacked' && showChallenger && columns >= 80
+  const showSideBySide = showChallenger && columns >= 80
   const panelGap = showSideBySide ? 1 : 0
   const panelWidth = showSideBySide
     ? Math.floor((columns - panelGap) / 2)
     : undefined
-  const effectiveLayout =
-    layout === 'stacked' ? 'stacked' : showSideBySide ? 'side-by-side' : 'stacked'
+  const effectiveLayout = showSideBySide ? 'side-by-side' : 'stacked'
 
   return (
     <Box flexDirection="column">
@@ -389,4 +383,27 @@ function renderGradientLine(line: string, index: number): JSX.Element {
 
 function renderMutedLine(line: string): JSX.Element {
   return <Text color="gray">{line}</Text>
+}
+
+function buildBlockWord(word: string): string[] {
+  const glyphs: Record<string, string[]> = {
+    A: [' ### ', '#   #', '#####', '#   #', '#   #'],
+    '-': ['  -  ', '  -  ', '  -  ', '  -  ', '  -  '],
+    M: ['#   #', '## ##', '# # #', '#   #', '#   #'],
+    I: ['#####', '  #  ', '  #  ', '  #  ', '#####'],
+    R: ['#### ', '#   #', '#### ', '#  # ', '#   #'],
+    O: [' ####', '#   #', '#   #', '#   #', ' ####']
+  }
+
+  const height = 5
+  const lines = Array.from({ length: height }, () => '')
+
+  for (const char of word) {
+    const glyph = glyphs[char.toUpperCase()] ?? glyphs['-']
+    for (let i = 0; i < height; i += 1) {
+      lines[i] += `${glyph[i]} `
+    }
+  }
+
+  return lines.map((line) => line.trimEnd())
 }
