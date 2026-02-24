@@ -10,7 +10,7 @@ npm run build
 node dist/cli.js chat
 ```
 
-Or run the CLI via `tsup` in watch mode:
+Or run the CLI via tsup in watch mode:
 
 ```bash
 npm run dev
@@ -20,8 +20,8 @@ node dist/cli.js chat
 ## Configuration
 
 Config is stored at:
-- macOS/Linux: `~/.config/adversarial-mirror/config.json`
-- Windows: `%APPDATA%\adversarial-mirror\config.json`
+- macOS/Linux: ~/.config/adversarial-mirror/config.json
+- Windows: %APPDATA%\adversarial-mirror\config.json
 
 Initialize with the wizard:
 
@@ -43,34 +43,51 @@ node dist/cli.js config set session.defaultIntensity aggressive
 
 ## Commands
 
-- `mirror chat` — Interactive session
-- `mirror mirror "question"` — One-shot query
-- `mirror config show` — Print config
-- `mirror config init` — Interactive setup wizard
-- `mirror config set <key> <value>`
-- `mirror brains list|test|add`
-- `mirror history list|show|export`
+- mirror chat : Interactive session
+- mirror mirror "question" : One-shot query
+- mirror config show : Print config
+- mirror config init : Interactive setup wizard
+- mirror config set <key> <value>
+- mirror brains list|test|add
+- mirror history list|show|export
+
+## Screenshot
+
+```
++--------------------------------------------------------------+
+| ADVERSARIAL MIRROR  [MODERATE]  claude vs gpt-4o              |
+|                                                              |
+| You: Should I use microservices or a monolith?               |
+| [MIRRORING] opinion_advice                                   |
+|                                                              |
+| ORIGINAL                      | CHALLENGER                   |
+| Start with a monolith...      | Hidden assumption: ...       |
+| ...                           | ...                          |
+|                                                              |
+| Enter to submit, Ctrl+C to exit                               |
++--------------------------------------------------------------+
+```
 
 ## Environment Variables
 
 Each brain uses an API key env var defined in config:
 
-- Anthropic: `ANTHROPIC_API_KEY`
-- OpenAI: `OPENAI_API_KEY`
-- Gemini: `GOOGLE_API_KEY`
+- Anthropic: ANTHROPIC_API_KEY
+- OpenAI: OPENAI_API_KEY
+- Gemini: GOOGLE_API_KEY
 
-Use `MOCK_BRAINS=true` to run without real API calls.
+Use MOCK_BRAINS=true to run without real API calls.
 
 ## Packaging
 
-Build standalone binaries with `pkg`:
+Build standalone binaries with pkg:
 
 ```bash
 npm run build
 npm run package
 ```
 
-Output lives in `dist/pkg`.
+Output lives in dist/pkg.
 
 ## Development
 
