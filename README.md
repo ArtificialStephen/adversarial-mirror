@@ -1,113 +1,143 @@
 # Adversarial Mirror
 
-Adversarial Mirror is a CLI middleware that sends each prompt to an original model and an adversarial challenger. It surfaces blind spots, counterarguments, and weak assumptions instead of echoing a single model's answer.
+A CLI middleware that forks every prompt to two AI models in parallel — an **original** brain and an **adversarial challenger** — then streams both responses side-by-side in real time.
 
-## Quickstart
+**Why:** Every AI model has systematic blind spots. The challenger is explicitly prompted to surface flaws, hidden assumptions, and counter-arguments that you'll never get from a single model. Combats AI sycophancy and echo chambers.
 
-```bash
-npm install
-npm run build
-node dist/cli.js chat
+```
+Your question
+    │
+    ├── factual / code / math ──► single brain (direct)
+    │
+    └── opinion / analysis / prediction ──► parallel fork
+            ├── Brain A: standard answer
+            └── Brain B: adversarial challenge ← the differentiator
 ```
 
-Or run the CLI via tsup in watch mode:
+## Install
 
 ```bash
-npm run dev
-npm run dev:chat
+npm install -g adversarial-mirror
+```
+
+Run the setup wizard once:
+
+```bash
+mirror config init
+```
+
+## Quick start
+
+```bash
+# Interactive chat
+mirror chat
+
+# One-shot (exits after response)
+mirror mirror "Should I use microservices or a monolith for my startup?"
+
+# Crank up the pressure
+mirror chat --intensity aggressive
+```
+
+## Adversarial intensity levels
+
+| Level | Style | What the challenger does |
+|---|---|---|
+| `mild` | Gentle critic | Full answer + 1-2 genuine gaps + steelman |
+| `moderate` | Devil's advocate | Reframe → challenge the frame → hidden costs → strongest counterposition → verdict |
+| `aggressive` | Full adversarial | Buried assumption → strongest refutation → failure cases → expert dissent → synthesis |
+
+All levels enforce: *"Every point must have a specific mechanism. Vague doubt is useless."*
+
+## Commands
+
+```
+mirror chat                        Interactive session (default)
+mirror mirror "<question>"         One-shot query, exits after response
+mirror config init                 Interactive setup wizard
+mirror config show                 Show current config (keys are visible)
+mirror config set <key> <value>    Set a config value by dot-path
+mirror brains list                 List configured AI brains
+mirror brains test <id>            Ping a brain to verify connection
+mirror brains add                  Add a new brain interactively
+mirror history list                List past sessions
+mirror history show <id>           Show a past session as JSON
+mirror history export <id> <file>  Export session to a JSON file
+
+Global flags:
+  --intensity mild|moderate|aggressive
+  --original <brain-id>
+  --challenger <brain-id>
+  --no-mirror         Disable mirroring (single brain mode)
+  --no-classify       Skip intent classification, always mirror
+  --debug             Enable verbose debug output
 ```
 
 ## Configuration
 
 Config is stored at:
-- macOS/Linux: ~/.config/adversarial-mirror/config.json
-- Windows: %APPDATA%\adversarial-mirror\config.json
+- **macOS/Linux:** `~/.config/adversarial-mirror/config.json`
+- **Windows:** `%APPDATA%\adversarial-mirror\config.json`
 
-Initialize with the wizard (includes API key setup and Gemini model validation):
-
-```bash
-node dist/cli.js config init
-```
-
-Show config:
+API keys are read from environment variables:
 
 ```bash
-node dist/cli.js config show
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
+export GOOGLE_API_KEY=AIza...
 ```
 
-Set a config value:
+## Supported providers
+
+| Provider | Example models | Env var |
+|---|---|---|
+| Anthropic | `claude-sonnet-4-6`, `claude-opus-4-6` | `ANTHROPIC_API_KEY` |
+| OpenAI | `gpt-4o`, `gpt-4-turbo` | `OPENAI_API_KEY` |
+| Google | `gemini-2.5-pro`, `gemini-1.5-pro` | `GOOGLE_API_KEY` |
+
+Mix and match — the original and challenger can use different providers.
+
+## How the terminal UI works
+
+Completed exchanges are rendered **once** and stamped permanently into the terminal's scroll buffer (using Ink's `Static` component). Only the currently-streaming panels update. This means:
+
+- History never flickers or redraws on resize
+- You can scroll up to read previous exchanges at any time
+- The dynamic area stays small: just the live streaming panels + input
+
+## Development
 
 ```bash
-node dist/cli.js config set session.defaultIntensity aggressive
+git clone https://github.com/StephenMarullo/adversarial-mirror
+cd adversarial-mirror
+npm install
+npm run build
+npm test
 ```
 
-## Commands
+Run tests without real API keys:
 
-- mirror chat : Interactive session
-- mirror mirror "question" : One-shot query
-- mirror config show : Print config
-- mirror config init : Interactive setup wizard
-- mirror config set <key> <value>
-- mirror brains list|test|add
-- mirror history list|show|export
-
-## Screenshot
-
-```
-+--------------------------------------------------------------+
-| ADVERSARIAL MIRROR                                           |
-| ORIGINAL  << VS >>  CHALLENGER                               |
-| DUEL MODE | Intensity: MODERATE                              |
-|                                                              |
-| You: Should I use microservices or a monolith?               |
-| [MIRRORING] opinion_advice                                   |
-|                                                              |
-| ORIGINAL                      | CHALLENGER                   |
-| Start with a monolith...      | Hidden assumption: ...       |
-| ...                           | ...                          |
-|                                                              |
-| Ready | 0 turns | Enter to submit, Ctrl+C to exit             |
-+--------------------------------------------------------------+
+```bash
+MOCK_BRAINS=true npm test
 ```
 
-## Environment Variables
+Watch mode:
 
-Each brain uses an API key env var defined in config:
+```bash
+npm run dev
+```
 
-- Anthropic: ANTHROPIC_API_KEY
-- OpenAI: OPENAI_API_KEY
-- Gemini: GOOGLE_API_KEY
-
-Use MOCK_BRAINS=true to run without real API calls.
-
-## Packaging
-
-Build standalone binaries with pkg:
+## Building standalone binaries
 
 ```bash
 npm run build
 npm run package
+# outputs: dist/pkg/mirror-linux-x64, mirror-macos-arm64, mirror-win-x64.exe, etc.
 ```
 
-Output lives in dist/pkg.
+## CI
 
-## Homebrew
-
-After a tagged release is built, generate the Homebrew formula:
-
-```bash
-GITHUB_TOKEN=... node scripts/generate-homebrew.mjs v0.1.0
-```
-
-This writes homebrew/adversarial-mirror.rb with URLs and sha256 hashes.
-
-## Development
-
-Tests:
-
-```bash
-npm test
-```
+Every push runs the full test suite on Ubuntu, macOS, and Windows across Node.js 20 and 22. Tagged releases automatically publish to npm and attach pre-built binaries to the GitHub Release.
 
 ## License
 

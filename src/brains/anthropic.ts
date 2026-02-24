@@ -11,7 +11,7 @@ import type { BrainAdapter } from './adapter.js'
 export class AnthropicAdapter implements BrainAdapter {
   readonly id: string
   readonly provider = 'anthropic' as const
-  readonly capabilities = { streaming: false }
+  readonly capabilities = { streaming: true }
   private readonly client: Anthropic
   private readonly model: string
 
@@ -28,7 +28,17 @@ export class AnthropicAdapter implements BrainAdapter {
   }
 
   async ping(): Promise<PingResult> {
-    return { ok: true }
+    const start = Date.now()
+    try {
+      await this.client.messages.create({
+        model: this.model,
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'ping' }],
+      })
+      return { ok: true, latencyMs: Date.now() - start }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
   }
 
   async *chat(
@@ -36,36 +46,43 @@ export class AnthropicAdapter implements BrainAdapter {
     systemPrompt: string,
     options?: ChatOptions
   ): AsyncGenerator<StreamChunk, CompletedResponse> {
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: options?.maxTokens ?? 1024,
-      system: systemPrompt,
-      messages: messages
-        .filter((message) => message.role !== 'system')
-        .map((message) => ({
-          role: message.role === 'assistant' ? 'assistant' : 'user',
-          content: message.content
-        }))
-    })
+    const filtered = messages
+      .filter(m => m.role !== 'system')
+      .map(m => ({
+        role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+        content: m.content,
+      }))
 
-    const text = response.content
-      .map((block) => (block.type === 'text' ? block.text : ''))
-      .join('')
-      .trim()
+    // streaming helper — yields text deltas token-by-token, abortable
+    const stream = this.client.messages.stream(
+      {
+        model: this.model,
+        max_tokens: options?.maxTokens ?? 1024,
+        system: systemPrompt,
+        messages: filtered,
+      },
+      { signal: options?.signal }
+    )
 
-    const completed: CompletedResponse = {
-      text,
-      inputTokens: response.usage?.input_tokens,
-      outputTokens: response.usage?.output_tokens
+    let text = ''
+
+    for await (const event of stream) {
+      if (
+        event.type === 'content_block_delta' &&
+        event.delta.type === 'text_delta'
+      ) {
+        const delta = event.delta.text
+        text += delta
+        yield { delta, isFinal: false }
+      }
     }
 
-    yield {
-      delta: text,
-      isFinal: true,
-      inputTokens: completed.inputTokens,
-      outputTokens: completed.outputTokens
-    }
-    return completed
+    const finalMessage = await stream.finalMessage()
+    const inputTokens = finalMessage.usage.input_tokens
+    const outputTokens = finalMessage.usage.output_tokens
+
+    yield { delta: '', isFinal: true, inputTokens, outputTokens }
+    return { text, inputTokens, outputTokens }
   }
 
   estimateTokens(messages: ConversationMessage[]): number {

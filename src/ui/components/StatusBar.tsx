@@ -8,7 +8,7 @@ interface StatusBarProps {
 export function StatusBar({ text }: StatusBarProps): JSX.Element {
   return (
     <Box>
-      <Text>{text || 'Ready'}</Text>
+      <Text color="gray" dimColor>{text || 'Ready'}</Text>
     </Box>
   )
 }

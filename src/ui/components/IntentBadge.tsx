@@ -8,6 +8,12 @@ interface IntentBadgeProps {
 }
 
 export function IntentBadge({ category, mirrored }: IntentBadgeProps): JSX.Element {
-  const label = mirrored ? 'MIRRORING' : 'DIRECT'
-  return <Text>[{label}] {category}</Text>
+  return (
+    <Text>
+      <Text backgroundColor={mirrored ? 'blue' : 'blackBright'} color="white">
+        {` ${mirrored ? 'MIRRORING' : 'DIRECT'} `}
+      </Text>
+      <Text color="gray"> {category}</Text>
+    </Text>
+  )
 }

@@ -6,61 +6,72 @@ on:
       - 'v*'
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  binaries:
+    name: Binary (${{ matrix.output }})
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: node20-linux-x64
+            output: mirror-linux-x64
           - os: ubuntu-latest
             target: node20-linux-arm64
+            output: mirror-linux-arm64
           - os: macos-latest
             target: node20-macos-x64
+            output: mirror-macos-x64
           - os: macos-latest
             target: node20-macos-arm64
+            output: mirror-macos-arm64
           - os: windows-latest
             target: node20-win-x64
+            output: mirror-win-x64.exe
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - name: Install
-        run: npm install
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Build
         run: npm run build
-      - name: Package
-        run: npx @yao-pkg/pkg . --targets ${{ matrix.target }} --out-path dist/pkg
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.target }}
-          path: dist/pkg/**
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          registry-url: https://registry.npmjs.org
-      - name: Install
-        run: npm install
-      - name: Download Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist/pkg
-      - name: Publish to npm
-        if: ${{ secrets.NPM_TOKEN != '' }}
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Create GitHub Release
+      - name: Package binary
+        run: npx @yao-pkg/pkg dist/cli.js --target ${{ matrix.target }} --output dist/pkg/${{ matrix.output }}
+
+      - name: Attach to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/pkg/**
+          files: dist/pkg/${{ matrix.output }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

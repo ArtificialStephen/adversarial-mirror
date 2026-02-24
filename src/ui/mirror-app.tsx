@@ -3,24 +3,34 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Text, useInput, useStdout } from 'ink'
+import { Box, Static, Text, useInput, useStdout } from 'ink'
 import type { BrainResult, IntentResult } from '../types/index.js'
 import type { MirrorEngine } from '../engine/mirror-engine.js'
 import { Session } from '../engine/session.js'
 import { addHistoryEntry } from '../history/store.js'
 import { BrainPanel } from './components/BrainPanel.js'
-import { ChatLayout } from './components/ChatLayout.js'
 import { IntentBadge } from './components/IntentBadge.js'
-import { StatusBar } from './components/StatusBar.js'
 import { StreamingText } from './components/StreamingText.js'
 import { highlightCodeBlocks } from './utils/highlight.js'
 
-interface Turn {
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface CompletedExchange {
+  id: string
   question: string
-  answer: string
+  intent?: IntentResult
+  original: string
+  challenger?: string
+  isMirrored: boolean
+  /** Terminal width captured at completion time — frozen so Static renders at the right width. */
+  columns: number
 }
 
-interface MirrorAppProps {
+type StaticItem =
+  | { kind: 'header'; id: 'header'; lines: string[]; originalId: string; challengerId?: string; intensity: string }
+  | { kind: 'exchange'; id: string; exchange: CompletedExchange; originalId: string; challengerId?: string }
+
+export interface MirrorAppProps {
   engine: MirrorEngine
   session: Session
   originalId: string
@@ -32,7 +42,153 @@ interface MirrorAppProps {
   syntaxHighlighting?: boolean
 }
 
-const headerArt = loadHeaderArt()
+// ── Gradient helpers ───────────────────────────────────────────────────────────
+
+const GRAD = ['#00D2FF', '#3A7BD5', '#7F5AF0', '#FF6EC7', '#FFB86C']
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const n = hex.replace('#', '')
+  const v = parseInt(n.length === 3 ? n.split('').map(c => c + c).join('') : n, 16)
+  return { r: (v >> 16) & 0xff, g: (v >> 8) & 0xff, b: v & 0xff }
+}
+
+function gradColor(pos: number): string {
+  const p = Math.max(0, Math.min(1, pos))
+  const steps = GRAD.length - 1
+  const scaled = p * steps
+  const i = Math.min(Math.floor(scaled), steps - 1)
+  const t = scaled - i
+  const a = hexToRgb(GRAD[i])
+  const b = hexToRgb(GRAD[i + 1])
+  const r = Math.round(a.r + (b.r - a.r) * t)
+  const g = Math.round(a.g + (b.g - a.g) * t)
+  const bv = Math.round(a.b + (b.b - a.b) * t)
+  return `#${[r, g, bv].map(v => v.toString(16).padStart(2, '0')).join('')}`
+}
+
+function GradientLine({ line, bold }: { line: string; bold?: boolean }): JSX.Element {
+  if (!line.trim()) return <Text> </Text>
+  const chars = Array.from(line)
+  const last = Math.max(chars.length - 1, 1)
+  return (
+    <Text bold={bold} wrap="truncate">
+      {chars.map((ch, idx) => (
+        <Text key={idx} color={gradColor(idx / last)}>{ch}</Text>
+      ))}
+    </Text>
+  )
+}
+
+// ── Static sub-components (rendered once, never re-rendered) ───────────────────
+
+function HeaderView({
+  lines, originalId, challengerId, intensity
+}: {
+  lines: string[]; originalId: string; challengerId?: string; intensity: string
+}): JSX.Element {
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      {lines.map((line, i) =>
+        i < lines.length - 1
+          ? <GradientLine key={i} line={line} bold />
+          : <Text key={i} color="gray" wrap="truncate">{line}</Text>
+      )}
+      <Text color="gray" dimColor>
+        {'  '}{originalId}{challengerId ? ` vs ${challengerId}` : '  [direct mode]'}{'  '}[{intensity}]
+      </Text>
+    </Box>
+  )
+}
+
+function ExchangeView({
+  exchange, originalId, challengerId
+}: {
+  exchange: CompletedExchange; originalId: string; challengerId?: string
+}): JSX.Element {
+  const sideBySide = exchange.isMirrored && Boolean(exchange.challenger) && exchange.columns >= 80
+  const panelWidth = sideBySide ? Math.floor((exchange.columns - 1) / 2) : undefined
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold>
+        <Text color="cyan">You: </Text>
+        <Text>{exchange.question}</Text>
+      </Text>
+      {exchange.intent && (
+        <Box>
+          <IntentBadge category={exchange.intent.category} mirrored={exchange.intent.shouldMirror} />
+          <Text color="gray"> {Math.round(exchange.intent.confidence * 100)}%</Text>
+        </Box>
+      )}
+      <Box marginTop={1} flexDirection={sideBySide ? 'row' : 'column'}>
+        <BrainPanel
+          title={`ORIGINAL  ${originalId}`}
+          flex={!sideBySide}
+          width={panelWidth}
+          marginRight={sideBySide ? 1 : 0}
+        >
+          <Text wrap="wrap">{exchange.original}</Text>
+        </BrainPanel>
+        {exchange.isMirrored && exchange.challenger && (
+          <BrainPanel
+            title={`CHALLENGER  ${challengerId}`}
+            flex={!sideBySide}
+            width={panelWidth}
+          >
+            <Text wrap="wrap">{exchange.challenger}</Text>
+          </BrainPanel>
+        )}
+      </Box>
+    </Box>
+  )
+}
+
+// ── Header file loading ────────────────────────────────────────────────────────
+
+function loadRawHeaderLines(): string[] {
+  const cwd = process.cwd()
+  const candidates = [
+    resolve(cwd, 'src', 'ui', 'header.txt'),
+    resolve(cwd, 'header.txt'),
+  ]
+  for (const f of candidates) {
+    if (!existsSync(f)) continue
+    try {
+      const lines = readFileSync(f, 'utf8').split(/\r?\n/)
+      while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop()
+      return lines
+    } catch { continue }
+  }
+  try {
+    const p = fileURLToPath(new URL('./header.txt', import.meta.url))
+    if (existsSync(p)) {
+      const lines = readFileSync(p, 'utf8').split(/\r?\n/)
+      while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop()
+      return lines
+    }
+  } catch { /* no header file bundled */ }
+  return []
+}
+
+function fitLines(lines: string[], cols: number): string[] {
+  if (!lines.length || cols <= 0) return []
+  const trimmed = lines.map(l => l.replace(/\s+$/, ''))
+  const nonEmpty = trimmed.filter(l => l.trim().length > 0)
+  const indent = nonEmpty.length
+    ? Math.min(...nonEmpty.map(l => l.match(/^\s*/)?.[0].length ?? 0))
+    : 0
+  const aligned = indent > 0 ? trimmed.map(l => l.slice(indent)) : trimmed
+  return aligned.map(l => (l.length > cols ? l.slice(0, cols) : l))
+}
+
+// ── Formatting ─────────────────────────────────────────────────────────────────
+
+function formatTokens(input?: number, output?: number): string | null {
+  if (input === undefined && output === undefined) return null
+  return `${input ?? 0}/${output ?? 0}tok`
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export function MirrorApp({
   engine,
@@ -40,66 +196,77 @@ export function MirrorApp({
   originalId,
   challengerId,
   intensity,
-  layout,
   showTokenCounts = false,
   showLatency = true,
-  syntaxHighlighting = true
+  syntaxHighlighting = true,
 }: MirrorAppProps): JSX.Element {
-  const [input, setInput] = useState('')
-  const [originalTurns, setOriginalTurns] = useState<Turn[]>([])
-  const [challengerTurns, setChallengerTurns] = useState<Turn[]>([])
-  const [currentOriginal, setCurrentOriginal] = useState('')
-  const [currentChallenger, setCurrentChallenger] = useState('')
-  const [activeQuestion, setActiveQuestion] = useState('')
-  const [isThinking, setIsThinking] = useState(false)
-  const [intent, setIntent] = useState<IntentResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const runningRef = useRef(false)
-  const startTimesRef = useRef<Map<string, number>>(new Map())
-  const [originalStats, setOriginalStats] = useState<BrainResult | null>(null)
-  const [challengerStats, setChallengerStats] = useState<BrainResult | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const pendingOriginalRef = useRef('')
-  const pendingChallengerRef = useRef('')
-  const liveOriginalRef = useRef('')
-  const liveChallengerRef = useRef('')
   const { stdout } = useStdout()
   const columns = stdout?.columns ?? 120
 
-  const safeColumns = Math.max(1, columns - 1)
-  const fittedHeaderArt = useMemo(
-    () => fitHeaderArt(headerArt, safeColumns),
-    [safeColumns]
-  )
-  const subheaderLine = fitLineToColumns('Adversarial Mirror', safeColumns)
+  // Build and freeze the header item on first render — captured once, never changes
+  const initialStaticItems = useMemo<StaticItem[]>(() => {
+    const raw = loadRawHeaderLines()
+    const lines = fitLines(raw, Math.max(1, columns - 1))
+    return [{ kind: 'header', id: 'header', lines, originalId, challengerId, intensity }]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // intentionally empty — header is frozen at mount
 
+  const [completedItems, setCompletedItems] = useState<Array<StaticItem & { kind: 'exchange' }>>([])
+
+  // Static receives: [header, ...completed exchanges]
+  // Items can only be appended — Ink renders new ones and stamps them permanently above
+  const allStaticItems = useMemo<StaticItem[]>(
+    () => [...initialStaticItems, ...completedItems],
+    [initialStaticItems, completedItems]
+  )
+
+  // ── Dynamic UI state ─────────────────────────────────────────────────────────
+  const [input, setInput] = useState('')
+  const [activeQuestion, setActiveQuestion] = useState('')
+  const [currentOriginal, setCurrentOriginal] = useState('')
+  const [currentChallenger, setCurrentChallenger] = useState('')
+  const [isThinking, setIsThinking] = useState(false)
+  const [isClassifying, setIsClassifying] = useState(false)
+  const [intent, setIntent] = useState<IntentResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [originalStats, setOriginalStats] = useState<BrainResult | null>(null)
+  const [challengerStats, setChallengerStats] = useState<BrainResult | null>(null)
+  const [turnCount, setTurnCount] = useState(0)
+
+  // ── Refs (not reactive — avoid triggering re-renders) ────────────────────────
+  const runningRef = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
+  const pendingOrigRef = useRef('')
+  const pendingChalRef = useRef('')
+  const startTimesRef = useRef(new Map<string, number>())
+  const columnsRef = useRef(columns)
+
+  useEffect(() => { columnsRef.current = columns }, [columns])
+
+  // Batch streaming text updates at 60 ms — prevents a re-render on every token
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (pendingOriginalRef.current !== liveOriginalRef.current) {
-        liveOriginalRef.current = pendingOriginalRef.current
-        setCurrentOriginal(liveOriginalRef.current)
-      }
-      if (pendingChallengerRef.current !== liveChallengerRef.current) {
-        liveChallengerRef.current = pendingChallengerRef.current
-        setCurrentChallenger(liveChallengerRef.current)
-      }
+    const id = setInterval(() => {
+      setCurrentOriginal(pendingOrigRef.current)
+      setCurrentChallenger(pendingChalRef.current)
     }, 60)
-    return () => clearInterval(timer)
+    return () => clearInterval(id)
   }, [])
 
-  const headerLines = fittedHeaderArt.length > 0
-    ? [...fittedHeaderArt, subheaderLine]
-    : [fitLineToColumns('A - MIRROR', safeColumns), subheaderLine]
+  // ── Layout ───────────────────────────────────────────────────────────────────
+  const showChallengerPanel = Boolean(challengerId) && (intent?.shouldMirror ?? true)
+  const showSideBySide = showChallengerPanel && columns >= 80
+  const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : undefined
 
+  const formatText = useCallback(
+    (text: string) => (syntaxHighlighting ? highlightCodeBlocks(text) : text),
+    [syntaxHighlighting]
+  )
+
+  // ── Submit ───────────────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
-    if (runningRef.current) {
-      return
-    }
-
+    if (runningRef.current) return
     const question = input.trim()
-    if (!question) {
-      return
-    }
+    if (!question) return
 
     runningRef.current = true
     setInput('')
@@ -107,12 +274,13 @@ export function MirrorApp({
     setIntent(null)
     setActiveQuestion(question)
     setIsThinking(true)
+    setIsClassifying(false)
+    setOriginalStats(null)
+    setChallengerStats(null)
+    pendingOrigRef.current = ''
+    pendingChalRef.current = ''
     setCurrentOriginal('')
     setCurrentChallenger('')
-    pendingOriginalRef.current = ''
-    pendingChallengerRef.current = ''
-    liveOriginalRef.current = ''
-    liveChallengerRef.current = ''
 
     const history = session.getHistory()
     session.addUser(question)
@@ -122,71 +290,64 @@ export function MirrorApp({
     let originalResult: BrainResult | null = null
     let challengerResult: BrainResult | undefined
     let intentResult: IntentResult | undefined
+    let isMirrored = Boolean(challengerId)
+
     const entryId = randomUUID()
     const createdAt = new Date().toISOString()
     const controller = new AbortController()
     abortRef.current = controller
 
-    startTimesRef.current = new Map()
-    startTimesRef.current.set(originalId, Date.now())
-    if (challengerId) {
-      startTimesRef.current.set(challengerId, Date.now())
-    }
+    startTimesRef.current = new Map<string, number>([
+      [originalId, Date.now()],
+      ...(challengerId ? [[challengerId, Date.now()] as [string, number]] : []),
+    ])
 
     try {
       for await (const event of engine.run(question, history, { signal: controller.signal })) {
         if (event.type === 'classifying') {
-          setIntent(null)
+          setIsClassifying(true)
         }
 
         if (event.type === 'classified') {
+          setIsClassifying(false)
           setIntent(event.result)
           intentResult = event.result
+          isMirrored = event.result.shouldMirror && Boolean(challengerId)
         }
 
         if (event.type === 'stream_chunk') {
           if (event.brainId === originalId) {
             originalBuffer += event.chunk.delta
-            pendingOriginalRef.current = originalBuffer
+            pendingOrigRef.current = originalBuffer
           } else if (event.brainId === challengerId) {
             challengerBuffer += event.chunk.delta
-            pendingChallengerRef.current = challengerBuffer
+            pendingChalRef.current = challengerBuffer
           }
         }
 
         if (event.type === 'brain_complete') {
+          const latency = Date.now() - (startTimesRef.current.get(event.brainId) ?? Date.now())
           if (event.brainId === originalId) {
-            const answer = event.response.text || originalBuffer
-            const latency =
-              Date.now() - (startTimesRef.current.get(originalId) ?? Date.now())
+            const text = event.response.text || originalBuffer
             originalResult = {
               brainId: originalId,
-              text: answer,
+              text,
               inputTokens: event.response.inputTokens,
               outputTokens: event.response.outputTokens,
-              latencyMs: latency
+              latencyMs: latency,
             }
             setOriginalStats(originalResult)
-            session.addAssistant(answer)
-            setOriginalTurns((prev) => [...prev, { question, answer }])
-            setCurrentOriginal('')
-            pendingOriginalRef.current = ''
+            session.addAssistant(text)
           } else if (event.brainId === challengerId) {
-            const answer = event.response.text || challengerBuffer
-            const latency =
-              Date.now() -
-              (startTimesRef.current.get(challengerId) ?? Date.now())
+            const text = event.response.text || challengerBuffer
             challengerResult = {
-              brainId: challengerId,
-              text: answer,
+              brainId: challengerId!,
+              text,
               inputTokens: event.response.inputTokens,
               outputTokens: event.response.outputTokens,
-              latencyMs: latency
+              latencyMs: latency,
             }
             setChallengerStats(challengerResult)
-            setChallengerTurns((prev) => [...prev, { question, answer }])
-            setCurrentChallenger('')
-            pendingChallengerRef.current = ''
           }
         }
 
@@ -197,8 +358,33 @@ export function MirrorApp({
             question,
             original: originalResult,
             challenger: challengerResult,
-            intent: intentResult
+            intent: intentResult,
           })
+
+          // Capture terminal width at completion time — Static renders with this width forever
+          const cols = columnsRef.current
+          const exchange: CompletedExchange = {
+            id: entryId,
+            question,
+            intent: intentResult,
+            original: formatText(originalResult.text),
+            challenger: challengerResult ? formatText(challengerResult.text) : undefined,
+            isMirrored,
+            columns: cols,
+          }
+
+          setCompletedItems(prev => [
+            ...prev,
+            { kind: 'exchange', id: entryId, exchange, originalId, challengerId },
+          ])
+          setTurnCount(prev => prev + 1)
+
+          // Clear the streaming area — Static will show the completed exchange
+          setActiveQuestion('')
+          pendingOrigRef.current = ''
+          pendingChalRef.current = ''
+          setCurrentOriginal('')
+          setCurrentChallenger('')
         }
 
         if (event.type === 'error') {
@@ -206,338 +392,148 @@ export function MirrorApp({
         }
       }
     } catch (err) {
-      setError((err as Error).message ?? 'Unknown error')
+      if ((err as Error).name !== 'AbortError') {
+        setError((err as Error).message ?? 'Unknown error')
+      }
     } finally {
       setIsThinking(false)
+      setIsClassifying(false)
       runningRef.current = false
       abortRef.current = null
     }
-  }, [challengerId, engine, input, originalId, session])
+  }, [challengerId, engine, formatText, input, originalId, session])
 
-  useInput((inputChar, key) => {
-    if (key.ctrl && inputChar === 'c') {
+  // ── Input handling ───────────────────────────────────────────────────────────
+  useInput((ch, key) => {
+    if (key.ctrl && ch === 'c') {
       if (isThinking && abortRef.current) {
         abortRef.current.abort()
         return
       }
       process.exit(0)
     }
-
-    if (key.return) {
-      void submit()
-      return
-    }
-
-    if (key.backspace || key.delete) {
-      setInput((prev) => prev.slice(0, -1))
-      return
-    }
-
-    if (inputChar) {
-      setInput((prev) => prev + inputChar)
-    }
+    if (key.return) { void submit(); return }
+    if (key.backspace || key.delete) { setInput(p => p.slice(0, -1)); return }
+    if (ch && !key.ctrl && !key.meta) setInput(p => p + ch)
   })
 
-  const showChallenger = Boolean(challengerId && (intent?.shouldMirror ?? true))
-  const formatText = useCallback(
-    (text: string) => (syntaxHighlighting ? highlightCodeBlocks(text) : text),
-    [syntaxHighlighting]
-  )
-  const statusSegments: string[] = []
-  statusSegments.push(isThinking ? 'Thinking...' : 'Ready')
+  // ── Status bar ───────────────────────────────────────────────────────────────
+  const statusParts: string[] = []
+  if (isClassifying) statusParts.push('Classifying...')
+  else if (isThinking) statusParts.push('Thinking...')
+  else statusParts.push('Ready')
 
-  if (showTokenCounts && originalStats) {
-    const origTokens = formatTokens(
-      originalStats.inputTokens,
-      originalStats.outputTokens
-    )
-    if (origTokens) {
-      statusSegments.push(`orig ${origTokens}`)
+  if (showTokenCounts) {
+    const origT = formatTokens(originalStats?.inputTokens, originalStats?.outputTokens)
+    if (origT) statusParts.push(`orig ${origT}`)
+    if (challengerStats) {
+      const chalT = formatTokens(challengerStats.inputTokens, challengerStats.outputTokens)
+      if (chalT) statusParts.push(`chal ${chalT}`)
     }
   }
-
-  if (showTokenCounts && challengerStats && showChallenger) {
-    const chalTokens = formatTokens(
-      challengerStats.inputTokens,
-      challengerStats.outputTokens
-    )
-    if (chalTokens) {
-      statusSegments.push(`chal ${chalTokens}`)
-    }
+  if (showLatency && originalStats?.latencyMs != null) {
+    statusParts.push(`orig ${(originalStats.latencyMs / 1000).toFixed(1)}s`)
   }
-
-  if (showLatency && originalStats?.latencyMs !== undefined) {
-    statusSegments.push(`orig ${originalStats.latencyMs}ms`)
+  if (showLatency && challengerStats?.latencyMs != null) {
+    statusParts.push(`chal ${(challengerStats.latencyMs / 1000).toFixed(1)}s`)
   }
+  statusParts.push(`${turnCount} turn${turnCount !== 1 ? 's' : ''}`)
+  statusParts.push('Ctrl+C to exit')
 
-  if (showLatency && challengerStats?.latencyMs !== undefined && showChallenger) {
-    statusSegments.push(`chal ${challengerStats.latencyMs}ms`)
-  }
-
-  statusSegments.push(`${originalTurns.length} turns`)
-  statusSegments.push('Enter to submit, Ctrl+C to exit')
-  const statusText = statusSegments.join(' | ')
-
-  const originalRendered = useMemo(
-    () =>
-      originalTurns.map((turn, index) => (
-        <Box key={`orig-${index}`} flexDirection="column" marginTop={1}>
-          <Text color="cyan">Q: {turn.question}</Text>
-          <Text>A: {formatText(turn.answer)}</Text>
-        </Box>
-      )),
-    [originalTurns, formatText]
-  )
-
-  const challengerRendered = useMemo(
-    () =>
-      challengerTurns.map((turn, index) => (
-        <Box key={`chal-${index}`} flexDirection="column" marginTop={1}>
-          <Text color="cyan">Q: {turn.question}</Text>
-          <Text>A: {formatText(turn.answer)}</Text>
-        </Box>
-      )),
-    [challengerTurns, formatText]
-  )
-
-  const showSideBySide = showChallenger && columns >= 80
-  const panelGap = showSideBySide ? 1 : 0
-  const panelWidth = showSideBySide
-    ? Math.floor((columns - panelGap) / 2)
-    : undefined
-  const effectiveLayout = showSideBySide ? 'side-by-side' : 'stacked'
-
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <Box flexDirection="column">
-      <Box flexDirection="column">
-        {headerLines.map((line, index) => (
-          <React.Fragment key={`header-${index}`}>
-            {index === headerLines.length - 1
-              ? renderMutedLine(line)
-              : renderGradientLine(line, true)}
-          </React.Fragment>
-        ))}
-      </Box>
-      {intent && (
-        <Box marginTop={1}>
-          <IntentBadge category={intent.category} mirrored={intent.shouldMirror} />
-          <Text> ({Math.round(intent.confidence * 100)}%)</Text>
+
+      {/*
+       * Static renders each item ONCE and stamps it into the terminal scroll
+       * buffer permanently — just like normal terminal output. This means:
+       *   - History never redraws or flickers
+       *   - The terminal resizes gracefully (completed turns don't move)
+       *   - Ink's dynamic area stays small (only streaming panels + input)
+       */}
+      <Static items={allStaticItems}>
+        {(item) => {
+          if (item.kind === 'header') {
+            return (
+              <HeaderView
+                key="header"
+                lines={item.lines}
+                originalId={item.originalId}
+                challengerId={item.challengerId}
+                intensity={item.intensity}
+              />
+            )
+          }
+          return (
+            <ExchangeView
+              key={item.id}
+              exchange={item.exchange}
+              originalId={item.originalId}
+              challengerId={item.challengerId}
+            />
+          )
+        }}
+      </Static>
+
+      {/* In-progress streaming — only present while a query is running */}
+      {isThinking && activeQuestion && (
+        <Box flexDirection="column">
+          <Text bold>
+            <Text color="cyan">You: </Text>
+            <Text>{activeQuestion}</Text>
+          </Text>
+
+          {intent ? (
+            <Box>
+              <IntentBadge category={intent.category} mirrored={intent.shouldMirror} />
+              <Text color="gray"> {Math.round(intent.confidence * 100)}%</Text>
+            </Box>
+          ) : isClassifying ? (
+            <Text color="gray" dimColor>Classifying...</Text>
+          ) : null}
+
+          <Box marginTop={1} flexDirection={showSideBySide ? 'row' : 'column'}>
+            <BrainPanel
+              title={`ORIGINAL  ${originalId}`}
+              flex={!showSideBySide}
+              width={panelWidth}
+              marginRight={showSideBySide && showChallengerPanel ? 1 : 0}
+            >
+              <StreamingText value={currentOriginal} />
+            </BrainPanel>
+
+            {showChallengerPanel && (
+              <BrainPanel
+                title={`CHALLENGER  ${challengerId}  [${intensity}]`}
+                flex={!showSideBySide}
+                width={panelWidth}
+              >
+                <StreamingText value={currentChallenger} />
+              </BrainPanel>
+            )}
+          </Box>
         </Box>
       )}
+
+      {/* Error */}
       {error && (
         <Box marginTop={1}>
           <Text color="red">Error: {error}</Text>
         </Box>
       )}
+
+      {/* Status */}
       <Box marginTop={1}>
-        <ChatLayout layout={effectiveLayout} breakpoint={80}>
-          <BrainPanel
-            title={`ORIGINAL  ${originalId}`}
-            width={panelWidth}
-            marginRight={showSideBySide ? 1 : 0}
-          >
-            {originalRendered}
-            {isThinking && currentOriginal && (
-              <Box flexDirection="column" marginTop={1}>
-                <Text color="cyan">Q: {activeQuestion}</Text>
-                <StreamingText value={`A: ${currentOriginal}`} dim />
-              </Box>
-            )}
-          </BrainPanel>
-          {showChallenger && (
-            <BrainPanel title={`CHALLENGER  ${challengerId}`} width={panelWidth}>
-              {challengerRendered}
-              {isThinking && currentChallenger && (
-                <Box flexDirection="column" marginTop={1}>
-                  <Text color="cyan">Q: {activeQuestion}</Text>
-                  <StreamingText value={`A: ${currentChallenger}`} dim />
-                </Box>
-              )}
-            </BrainPanel>
-          )}
-        </ChatLayout>
+        <Text color="gray" dimColor>{statusParts.join(' · ')}</Text>
       </Box>
-      <Box marginTop={1}>
-        <StatusBar text={statusText} />
+
+      {/* Input prompt */}
+      <Box>
+        <Text color="cyan" bold>{'> '}</Text>
+        <Text>{input}</Text>
+        <Text color={isThinking ? 'gray' : 'cyan'}>█</Text>
       </Box>
-      <Text>{`> ${input}`}</Text>
+
     </Box>
   )
-}
-
-function formatTokens(
-  inputTokens?: number,
-  outputTokens?: number
-): string | null {
-  if (inputTokens === undefined && outputTokens === undefined) {
-    return null
-  }
-  const input = inputTokens ?? 0
-  const output = outputTokens ?? 0
-  return `${input}/${output} tok`
-}
-
-function loadHeaderArt(): string[] {
-  const cwd = process.cwd()
-  const candidateFiles = [
-    resolve(cwd, 'src', 'ui', 'header.txt'),
-    resolve(cwd, 'src', 'ui', 'hEADER.txt'),
-    resolve(cwd, 'header.txt'),
-    resolve(cwd, 'hEADER.txt')
-  ]
-
-  for (const filename of candidateFiles) {
-    if (!existsSync(filename)) {
-      continue
-    }
-    try {
-      const contents = readFileSync(filename, 'utf8')
-      return cleanHeaderLines(contents)
-    } catch {
-      continue
-    }
-  }
-
-  const moduleCandidates = ['header.txt', 'hEADER.txt']
-  for (const filename of moduleCandidates) {
-    try {
-      const headerPath = fileURLToPath(new URL(`./${filename}`, import.meta.url))
-      if (!existsSync(headerPath)) {
-        continue
-      }
-      const contents = readFileSync(headerPath, 'utf8')
-      return cleanHeaderLines(contents)
-    } catch {
-      continue
-    }
-  }
-
-  return []
-}
-
-function cleanHeaderLines(contents: string): string[] {
-  const lines = contents.split(/\r?\n/)
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-    lines.pop()
-  }
-  return lines
-}
-
-function fitHeaderArt(lines: string[], columns: number): string[] {
-  if (lines.length === 0 || columns <= 0) {
-    return []
-  }
-
-  const trimmed = lines.map((line) => line.replace(/\s+$/, ''))
-  const nonEmpty = trimmed.filter((line) => line.trim().length > 0)
-  const minIndent =
-    nonEmpty.length > 0
-      ? Math.min(...nonEmpty.map((line) => line.match(/^\s*/)?.[0].length ?? 0))
-      : 0
-  const aligned =
-    minIndent > 0 ? trimmed.map((line) => line.slice(minIndent)) : trimmed
-  const maxWidth =
-    aligned.length > 0 ? Math.max(...aligned.map((line) => line.length)) : 0
-
-  if (maxWidth === 0) {
-    return []
-  }
-
-  if (maxWidth <= columns) {
-    return aligned
-  }
-
-  const targetWidth = Math.max(1, Math.min(columns, maxWidth))
-  return aligned.map((line) => line.slice(0, targetWidth))
-}
-
-function fitLineToColumns(line: string, columns: number): string {
-  if (columns <= 0) {
-    return ''
-  }
-  if (line.length <= columns) {
-    return line
-  }
-  return line.slice(0, columns)
-}
-
-function renderMutedLine(line: string): JSX.Element {
-  return (
-    <Text color="gray" wrap="truncate">
-      {line}
-    </Text>
-  )
-}
-
-const HEADER_GRADIENT_STOPS = [
-  '#00D2FF',
-  '#3A7BD5',
-  '#7F5AF0',
-  '#FF6EC7',
-  '#FFB86C'
-]
-
-function renderGradientLine(line: string, bold = false): JSX.Element {
-  if (line.length === 0) {
-    return (
-      <Text bold={bold} wrap="truncate">
-        {line}
-      </Text>
-    )
-  }
-
-  const chars = Array.from(line)
-  const lastIndex = Math.max(chars.length - 1, 1)
-
-  return (
-    <Text bold={bold} wrap="truncate">
-      {chars.map((char, index) => (
-        <Text key={`char-${index}`} color={gradientColorAt(index / lastIndex)}>
-          {char}
-        </Text>
-      ))}
-    </Text>
-  )
-}
-
-function gradientColorAt(position: number): string {
-  const clamped = Math.max(0, Math.min(1, position))
-  const steps = HEADER_GRADIENT_STOPS.length - 1
-  const scaled = clamped * steps
-  const index = Math.min(Math.floor(scaled), steps - 1)
-  const local = scaled - index
-  const from = hexToRgb(HEADER_GRADIENT_STOPS[index])
-  const to = hexToRgb(HEADER_GRADIENT_STOPS[index + 1])
-
-  const red = Math.round(lerp(from.r, to.r, local))
-  const green = Math.round(lerp(from.g, to.g, local))
-  const blue = Math.round(lerp(from.b, to.b, local))
-
-  return rgbToHex(red, green, blue)
-}
-
-function lerp(start: number, end: number, t: number): number {
-  return start + (end - start) * t
-}
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const normalized = hex.replace('#', '')
-  const value = normalized.length === 3
-    ? normalized
-        .split('')
-        .map((char) => char + char)
-        .join('')
-    : normalized
-  const int = Number.parseInt(value, 16)
-  return {
-    r: (int >> 16) & 0xff,
-    g: (int >> 8) & 0xff,
-    b: int & 0xff
-  }
-}
-
-function rgbToHex(r: number, g: number, b: number): string {
-  return `#${[r, g, b]
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('')}`
 }
