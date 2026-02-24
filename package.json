@@ -35,7 +35,7 @@
     "pkg": "^5.8.1",
     "tsup": "^8.3.0",
     "typescript": "^5.4.5",
-    "vitest": "^2.1.9"
+    "vitest": "^4.0.18"
   },
   "pkg": {
     "scripts": "dist/cli.js",
