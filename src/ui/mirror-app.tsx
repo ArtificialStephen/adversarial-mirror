@@ -74,18 +74,23 @@ export function MirrorApp({
     }
 
     const handleResize = () => {
+      const next = stdout.columns ?? 120
+      const prev = lastColumnsRef.current
+      if (next === prev) {
+        return
+      }
+      lastColumnsRef.current = next
       if (resizeTimerRef.current) {
         clearTimeout(resizeTimerRef.current)
       }
-      const next = stdout.columns ?? 120
+      if (next < prev) {
+        setColumns(next)
+        return
+      }
       resizeTimerRef.current = setTimeout(() => {
-        if (next < lastColumnsRef.current) {
-          clearTerminal(stdout)
-        }
-        lastColumnsRef.current = next
         setColumns(next)
         resizeTimerRef.current = null
-      }, 60)
+      }, 80)
     }
 
     handleResize()
@@ -491,13 +496,6 @@ function fitLineToColumns(line: string, columns: number): string {
     return line
   }
   return line.slice(0, columns)
-}
-
-function clearTerminal(stdout: NodeJS.WriteStream): void {
-  if (!stdout.isTTY) {
-    return
-  }
-  stdout.write('\x1b[2J\x1b[H')
 }
 
 function resampleLine(line: string, sourceWidth: number, targetWidth: number): string {
