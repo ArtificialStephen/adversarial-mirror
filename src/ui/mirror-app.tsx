@@ -63,50 +63,13 @@ export function MirrorApp({
   const pendingChallengerRef = useRef('')
   const liveOriginalRef = useRef('')
   const liveChallengerRef = useRef('')
-  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { stdout } = useStdout()
-  const [columns, setColumns] = useState(stdout?.columns ?? 120)
-  const lastColumnsRef = useRef(columns)
-
-  useEffect(() => {
-    if (!stdout) {
-      return
-    }
-
-    const handleResize = () => {
-      const next = stdout.columns ?? 120
-      const prev = lastColumnsRef.current
-      if (next === prev) {
-        return
-      }
-      lastColumnsRef.current = next
-      if (resizeTimerRef.current) {
-        clearTimeout(resizeTimerRef.current)
-      }
-      if (next < prev) {
-        setColumns(next)
-        return
-      }
-      resizeTimerRef.current = setTimeout(() => {
-        setColumns(next)
-        resizeTimerRef.current = null
-      }, 80)
-    }
-
-    handleResize()
-    stdout.on('resize', handleResize)
-    return () => {
-      if (resizeTimerRef.current) {
-        clearTimeout(resizeTimerRef.current)
-      }
-      stdout.off('resize', handleResize)
-    }
-  }, [stdout])
+  const columns = stdout?.columns ?? 120
 
   const safeColumns = Math.max(1, columns - 1)
   const fittedHeaderArt = useMemo(
     () => fitHeaderArt(headerArt, safeColumns),
-    [columns]
+    [safeColumns]
   )
   const subheaderLine = fitLineToColumns('Adversarial Mirror', safeColumns)
 
@@ -481,11 +444,11 @@ function fitHeaderArt(lines: string[], columns: number): string[] {
   }
 
   if (maxWidth <= columns) {
-    return aligned.map((line) => line.padEnd(maxWidth, ' '))
+    return aligned
   }
 
   const targetWidth = Math.max(1, Math.min(columns, maxWidth))
-  return aligned.map((line) => resampleLine(line, maxWidth, targetWidth))
+  return aligned.map((line) => line.slice(0, targetWidth))
 }
 
 function fitLineToColumns(line: string, columns: number): string {
@@ -498,29 +461,12 @@ function fitLineToColumns(line: string, columns: number): string {
   return line.slice(0, columns)
 }
 
-function resampleLine(line: string, sourceWidth: number, targetWidth: number): string {
-  if (targetWidth >= sourceWidth) {
-    return line.padEnd(sourceWidth, ' ').slice(0, targetWidth)
-  }
-  if (targetWidth <= 1) {
-    return (line[0] ?? '').padEnd(targetWidth, ' ')
-  }
-
-  const padded = line.padEnd(sourceWidth, ' ')
-  const out = new Array(targetWidth)
-  const lastSource = sourceWidth - 1
-  const lastTarget = targetWidth - 1
-
-  for (let x = 0; x < targetWidth; x += 1) {
-    const sourceIndex = Math.round((x / lastTarget) * lastSource)
-    out[x] = padded[sourceIndex]
-  }
-
-  return out.join('')
-}
-
 function renderMutedLine(line: string): JSX.Element {
-  return <Text color="gray">{line}</Text>
+  return (
+    <Text color="gray" wrap="truncate">
+      {line}
+    </Text>
+  )
 }
 
 const HEADER_GRADIENT_STOPS = [
@@ -533,14 +479,18 @@ const HEADER_GRADIENT_STOPS = [
 
 function renderGradientLine(line: string, bold = false): JSX.Element {
   if (line.length === 0) {
-    return <Text bold={bold}>{line}</Text>
+    return (
+      <Text bold={bold} wrap="truncate">
+        {line}
+      </Text>
+    )
   }
 
   const chars = Array.from(line)
   const lastIndex = Math.max(chars.length - 1, 1)
 
   return (
-    <Text bold={bold}>
+    <Text bold={bold} wrap="truncate">
       {chars.map((char, index) => (
         <Text key={`char-${index}`} color={gradientColorAt(index / lastIndex)}>
           {char}

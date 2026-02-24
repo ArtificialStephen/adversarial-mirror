@@ -49,17 +49,6 @@ export function runChat(command: Command): void {
       debug: Boolean(opts.debug)
     })
 
-    const stdout = process.stdout
-    let lastColumns = stdout.columns ?? 120
-    const handleResize = () => {
-      const next = stdout.columns ?? lastColumns
-      if (next < lastColumns && stdout.isTTY) {
-        stdout.write('\x1b[2J\x1b[H')
-      }
-      lastColumns = next
-    }
-    stdout.on('resize', handleResize)
-
     const app = render(
       React.createElement(MirrorApp, {
         engine,
@@ -73,9 +62,7 @@ export function runChat(command: Command): void {
         syntaxHighlighting: config.ui.syntaxHighlighting
       })
     )
-    void app.waitUntilExit().finally(() => {
-      stdout.off('resize', handleResize)
-    })
+    void app.waitUntilExit()
   } catch (error) {
     process.stderr.write(
       `Failed to start chat: ${(error as Error).message}\n`
