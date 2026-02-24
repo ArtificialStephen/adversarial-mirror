@@ -78,10 +78,14 @@ export function MirrorApp({
   const headerLines =
     columns >= 90
       ? [
-          ...buildBlockWord('A-MIRROR'),
-          `Adversarial Mirror | Intensity: ${intensity.toUpperCase()}`
+          '    ___       __  __ _____ ____  ____   ___   ____   ',
+          '   / _ \\     |  \\/  |_   _|  _ \\|  _ \\ / _ \\ / ___|  ',
+          '  / /_\\ \\    | |\\/| | | | | |_) | |_) | | | | |      ',
+          ' /  _  |     | |  | | | | |  _ <|  _ <| |_| | |___   ',
+          '/_/ |_|      |_|  |_| |_| |_| \\_\\_| \\_\\\\___/ \\____|  ',
+          '                Adversarial Mirror'
         ]
-      : ['A-MIRROR', `Adversarial Mirror | Intensity: ${intensity.toUpperCase()}`]
+      : ['A-MIRROR', 'Adversarial Mirror']
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
