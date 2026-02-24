@@ -2,7 +2,11 @@ import { Command } from 'commander'
 import { runChat } from './commands/chat.js'
 import { runMirror } from './commands/mirror.js'
 import { runConfig } from './commands/config.js'
-import { runBrains } from './commands/brains.js'
+import {
+  runBrainsAdd,
+  runBrainsList,
+  runBrainsTest
+} from './commands/brains.js'
 
 const program = new Command()
 
@@ -27,14 +31,14 @@ program
   .description('One-shot query')
   .action(runMirror)
 
-program
-  .command('config')
-  .description('Config commands')
-  .action(runConfig)
+const config = program.command('config').description('Config commands')
+config.action(runConfig)
+config.command('show').description('Show current config').action(runConfig)
 
-program
-  .command('brains')
-  .description('Brain management commands')
-  .action(runBrains)
+const brains = program.command('brains').description('Brain management commands')
+brains.action(runBrainsList)
+brains.command('list').description('List configured brains').action(runBrainsList)
+brains.command('test <id>').description('Test a brain').action(runBrainsTest)
+brains.command('add').description('Add a new brain').action(runBrainsAdd)
 
 program.parse()
