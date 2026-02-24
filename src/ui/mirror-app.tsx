@@ -93,10 +93,12 @@ export function MirrorApp({
     }
   }, [stdout])
 
+  const safeColumns = Math.max(1, columns - 1)
   const fittedHeaderArt = useMemo(
-    () => fitHeaderArt(headerArt, columns),
+    () => fitHeaderArt(headerArt, safeColumns),
     [columns]
   )
+  const subheaderLine = fitLineToColumns('Adversarial Mirror', safeColumns)
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -113,8 +115,8 @@ export function MirrorApp({
   }, [])
 
   const headerLines = fittedHeaderArt.length > 0
-    ? [...fittedHeaderArt, 'Adversarial Mirror']
-    : ['A - MIRROR', 'Adversarial Mirror']
+    ? [...fittedHeaderArt, subheaderLine]
+    : [fitLineToColumns('A - MIRROR', safeColumns), subheaderLine]
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -474,6 +476,16 @@ function fitHeaderArt(lines: string[], columns: number): string[] {
 
   const targetWidth = Math.max(1, Math.min(columns, maxWidth))
   return aligned.map((line) => resampleLine(line, maxWidth, targetWidth))
+}
+
+function fitLineToColumns(line: string, columns: number): string {
+  if (columns <= 0) {
+    return ''
+  }
+  if (line.length <= columns) {
+    return line
+  }
+  return line.slice(0, columns)
 }
 
 function resampleLine(line: string, sourceWidth: number, targetWidth: number): string {
