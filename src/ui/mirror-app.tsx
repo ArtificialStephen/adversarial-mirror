@@ -78,14 +78,14 @@ export function MirrorApp({
   const headerLines =
     columns >= 90
       ? [
-          '    _      __  __ ___ ____  ____   ___   ____  ',
-          '   / \\     |  \\/  |_ _|  _ \\|  _ \\ / _ \\ / ___| ',
-          '  / _ \\    | |\\/| || || |_) | |_) | | | | |     ',
-          ' / ___ \\   | |  | || ||  _ <|  _ <| |_| | |___  ',
-          '/_/   \\_\\  |_|  |_|___|_| \\_\\_| \\_\\\\___/ \\____| ',
-          `                A-MIRROR | Intensity: ${intensity.toUpperCase()}`
+          '    ___   -   __  __ _____ ____  ____   ___   ____  ',
+          '   / _ \\  -  |  \\/  |_   _|  _ \\|  _ \\ / _ \\ / ___| ',
+          '  / /_\\ \\ -  | |\\/| | | | | |_) | |_) | | | | |     ',
+          ' /  _  | -  | |  | | | | |  _ <|  _ <| |_| | |___  ',
+          '/_/ |_|  -  |_|  |_| |_| |_| \\_\\_| \\_\\\\___/ \\____| ',
+          `             Adversarial Mirror | Intensity: ${intensity.toUpperCase()}`
         ]
-      : ['A-MIRROR', `Intensity: ${intensity.toUpperCase()}`]
+      : ['A-MIRROR', `Adversarial Mirror | Intensity: ${intensity.toUpperCase()}`]
 
   const submit = useCallback(async () => {
     if (runningRef.current) {
@@ -296,12 +296,14 @@ export function MirrorApp({
     [challengerTurns, formatText]
   )
 
-  const showSideBySide = showChallenger && columns >= 100
+  const showSideBySide =
+    layout !== 'stacked' && showChallenger && columns >= 80
   const panelGap = showSideBySide ? 1 : 0
   const panelWidth = showSideBySide
     ? Math.floor((columns - panelGap) / 2)
     : undefined
-  const effectiveLayout = showSideBySide ? 'side-by-side' : 'stacked'
+  const effectiveLayout =
+    layout === 'stacked' ? 'stacked' : showSideBySide ? 'side-by-side' : 'stacked'
 
   return (
     <Box flexDirection="column">
@@ -326,7 +328,7 @@ export function MirrorApp({
         </Box>
       )}
       <Box marginTop={1}>
-        <ChatLayout layout={effectiveLayout} breakpoint={100}>
+        <ChatLayout layout={effectiveLayout} breakpoint={80}>
           <BrainPanel
             title={`ORIGINAL  ${originalId}`}
             width={panelWidth}
