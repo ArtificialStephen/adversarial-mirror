@@ -1,7 +1,11 @@
+import { execFile } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
+import { promisify } from 'node:util'
 import { loadConfig, saveConfig, setConfigValue } from '../../config/loader.js'
 import type { AppConfig } from '../../config/schema.js'
+
+const execFileAsync = promisify(execFile)
 
 export function runConfigShow(): void {
   const config = loadConfig()
@@ -93,6 +97,23 @@ export async function runConfigInit(): Promise<void> {
       throw new Error(`Unknown challenger brain id: ${challengerBrainId}`)
     }
 
+    const updatedKeys = await promptForApiKeys(rl, config)
+    if (Object.keys(updatedKeys).length > 0) {
+      const persist = await askYesNo(
+        rl,
+        'Persist API keys to environment variables? (y/n) [y]: ',
+        true
+      )
+      if (persist) {
+        await persistEnvVars(updatedKeys)
+        process.stdout.write(
+          'Keys saved. Open a new terminal session to pick them up.\n'
+        )
+      }
+    }
+
+    await validateGeminiModels(rl, config, updatedKeys)
+
     saveConfig({
       ...config,
       session: {
@@ -183,4 +204,168 @@ async function askYesNo(
     return false
   }
   return askYesNo(rl, prompt, fallback)
+}
+
+async function promptForApiKeys(
+  rl: ReturnType<typeof createInterface>,
+  config: AppConfig
+): Promise<Record<string, string>> {
+  const updated: Record<string, string> = {}
+  const uniqueEnvVars = Array.from(
+    new Set(config.brains.map((brain) => brain.apiKeyEnvVar))
+  )
+
+  process.stdout.write('\nAPI key setup (stored in environment variables):\n')
+
+  for (const envVar of uniqueEnvVars) {
+    const alreadySet = Boolean(process.env[envVar])
+    const shouldSet = await askYesNo(
+      rl,
+      `${envVar} ${alreadySet ? '(already set)' : '(missing)'} - set now? (y/n) [${
+        alreadySet ? 'n' : 'y'
+      }]: `,
+      !alreadySet
+    )
+    if (!shouldSet) {
+      continue
+    }
+
+    const secret = await askSecret(rl, `Enter value for ${envVar}: `)
+    if (!secret) {
+      continue
+    }
+    process.env[envVar] = secret
+    updated[envVar] = secret
+  }
+
+  return updated
+}
+
+async function askSecret(
+  rl: ReturnType<typeof createInterface>,
+  prompt: string
+): Promise<string> {
+  if (!input.isTTY) {
+    return askRequired(rl, prompt)
+  }
+
+  output.write(prompt)
+  rl.pause()
+  input.setRawMode(true)
+  input.resume()
+
+  let value = ''
+
+  return new Promise((resolve) => {
+    const onData = (chunk: Buffer) => {
+      const char = chunk.toString()
+      if (char === '\r' || char === '\n') {
+        input.setRawMode(false)
+        input.pause()
+        input.removeListener('data', onData)
+        output.write('\n')
+        rl.resume()
+        resolve(value)
+        return
+      }
+      if (char === '\u0003') {
+        process.exit(1)
+      }
+      if (char === '\u0008' || char === '\u007f') {
+        value = value.slice(0, -1)
+        return
+      }
+      value += char
+    }
+
+    input.on('data', onData)
+  })
+}
+
+async function persistEnvVars(vars: Record<string, string>): Promise<void> {
+  if (process.platform === 'win32') {
+    for (const [key, value] of Object.entries(vars)) {
+      await execFileAsync('setx', [key, value])
+    }
+    return
+  }
+
+  process.stdout.write(
+    'Non-Windows detected. Please export your keys in your shell profile.\n'
+  )
+}
+
+async function validateGeminiModels(
+  rl: ReturnType<typeof createInterface>,
+  config: AppConfig,
+  updatedKeys: Record<string, string>
+): Promise<void> {
+  const geminiBrains = config.brains.filter((brain) => brain.provider === 'gemini')
+  if (geminiBrains.length === 0) {
+    return
+  }
+
+  const geminiEnvVar = geminiBrains[0].apiKeyEnvVar
+  const apiKey = updatedKeys[geminiEnvVar] ?? process.env[geminiEnvVar]
+  if (!apiKey) {
+    return
+  }
+
+  const shouldCheck = await askYesNo(
+    rl,
+    'Check Gemini model availability now? (y/n) [y]: ',
+    true
+  )
+  if (!shouldCheck) {
+    return
+  }
+
+  try {
+    const models = await listGeminiModels(apiKey)
+    const supported = models.filter((model) =>
+      model.supportedGenerationMethods.some((method) =>
+        ['generateContent', 'streamGenerateContent'].includes(method)
+      )
+    )
+
+    for (const brain of geminiBrains) {
+      const exists = supported.some((model) => model.name.endsWith(`/${brain.model}`))
+      if (exists) {
+        continue
+      }
+      process.stdout.write(
+        `Gemini model not found for ${brain.id}: ${brain.model}\n`
+      )
+      const suggestion = supported.find((model) =>
+        model.name.endsWith('/gemini-2.5-pro')
+      )
+      const recommended = suggestion?.name.split('/').pop() ?? 'gemini-2.5-pro'
+      const nextModel = await askRequired(
+        rl,
+        `Enter a supported Gemini model [${recommended}]: `,
+        recommended
+      )
+      brain.model = nextModel
+    }
+  } catch (error) {
+    process.stderr.write(
+      `Failed to validate Gemini models: ${(error as Error).message}\n`
+    )
+  }
+}
+
+async function listGeminiModels(apiKey: string): Promise<GeminiModel[]> {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+  )
+  if (!res.ok) {
+    throw new Error(`Gemini ListModels failed: ${res.status}`)
+  }
+  const data = (await res.json()) as { models?: GeminiModel[] }
+  return data.models ?? []
+}
+
+interface GeminiModel {
+  name: string
+  supportedGenerationMethods: string[]
 }

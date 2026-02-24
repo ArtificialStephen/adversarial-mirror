@@ -14,7 +14,7 @@ Or run the CLI via tsup in watch mode:
 
 ```bash
 npm run dev
-node dist/cli.js chat
+npm run dev:chat
 ```
 
 ## Configuration
@@ -23,7 +23,7 @@ Config is stored at:
 - macOS/Linux: ~/.config/adversarial-mirror/config.json
 - Windows: %APPDATA%\adversarial-mirror\config.json
 
-Initialize with the wizard:
+Initialize with the wizard (includes API key setup and Gemini model validation):
 
 ```bash
 node dist/cli.js config init
@@ -55,7 +55,9 @@ node dist/cli.js config set session.defaultIntensity aggressive
 
 ```
 +--------------------------------------------------------------+
-| ADVERSARIAL MIRROR  [MODERATE]  claude vs gpt-4o              |
+| ADVERSARIAL MIRROR                                           |
+| ORIGINAL  << VS >>  CHALLENGER                               |
+| DUEL MODE | Intensity: MODERATE                              |
 |                                                              |
 | You: Should I use microservices or a monolith?               |
 | [MIRRORING] opinion_advice                                   |
@@ -64,7 +66,7 @@ node dist/cli.js config set session.defaultIntensity aggressive
 | Start with a monolith...      | Hidden assumption: ...       |
 | ...                           | ...                          |
 |                                                              |
-| Enter to submit, Ctrl+C to exit                               |
+| Ready | 0 turns | Enter to submit, Ctrl+C to exit             |
 +--------------------------------------------------------------+
 ```
 
