@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   test:
     name: Test
@@ -50,7 +53,7 @@ jobs:
       - name: Publish
         run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.adversarial_mirror }}
 
   binaries:
     name: Binary (${{ matrix.output }})
