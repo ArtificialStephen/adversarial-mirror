@@ -457,7 +457,6 @@ export function MirrorApp({
           setCurrentSynthesis('')
           setIsSynthesizing(false)
           setIsClassifying(false)
-          setIsThinking(false)
         }
 
         if (event.type === 'error') {
