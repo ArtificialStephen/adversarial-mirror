@@ -7,7 +7,10 @@ export const defaultConfig: AppConfig = {
     challengerBrainId: 'gpt-4o',
     defaultIntensity: 'moderate',
     historyWindowSize: 20,
-    autoClassify: true
+    autoClassify: true,
+    judgeEnabled: true,
+    judgeBrainId: 'claude-sonnet-4-6',
+    defaultPersona: undefined
   },
   ui: {
     layout: 'side-by-side',

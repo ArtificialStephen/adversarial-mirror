@@ -2,11 +2,22 @@ import type {
   ChatOptions,
   ConversationMessage,
   Intensity,
-  MirrorEvent
+  MirrorEvent,
+  SynthesisResult
 } from '../types/index.js'
 import type { BrainAdapter } from '../brains/adapter.js'
 import type { IntentClassifier } from './intent-classifier.js'
-import { buildChallengerPrompt, buildOriginalPrompt } from './prompt-builder.js'
+import {
+  buildChallengerPrompt,
+  buildOriginalPrompt,
+  buildPersonaChallengerPrompt,
+  isValidPersona,
+} from './prompt-builder.js'
+import {
+  buildJudgeMessages,
+  buildJudgeSystemPrompt,
+  extractAgreementScore,
+} from './judge.js'
 
 export interface MirrorEngineOptions {
   original: BrainAdapter
@@ -15,6 +26,8 @@ export interface MirrorEngineOptions {
   autoClassify: boolean
   classifier: IntentClassifier
   debug?: boolean
+  judge?: BrainAdapter
+  persona?: string
 }
 
 export class MirrorEngine {
@@ -24,6 +37,8 @@ export class MirrorEngine {
   private readonly autoClassify: boolean
   private readonly classifier: IntentClassifier
   private readonly debug: boolean
+  private readonly judge?: BrainAdapter
+  private readonly persona?: string
 
   constructor(options: MirrorEngineOptions) {
     this.original = options.original
@@ -32,6 +47,8 @@ export class MirrorEngine {
     this.autoClassify = options.autoClassify
     this.classifier = options.classifier
     this.debug = options.debug ?? false
+    this.judge = options.judge
+    this.persona = options.persona
   }
 
   async *run(
@@ -118,7 +135,10 @@ export class MirrorEngine {
       { role: 'user', content: userInput }
     ]
     const originalPrompt = buildOriginalPrompt()
-    const challengerPrompt = buildChallengerPrompt(this.intensity)
+    const challengerPrompt = this.persona && isValidPersona(this.persona)
+      ? buildPersonaChallengerPrompt(this.persona, this.intensity)
+      : buildChallengerPrompt(this.intensity)
+
     const originalStream = this.streamWithRetry(
       this.original,
       originalMessages,
@@ -159,8 +179,46 @@ export class MirrorEngine {
       brainId: this.challenger!.id,
       response: challengerResponse
     }
+
+    // ── Judge pass ───────────────────────────────────────────────────────────
+    if (this.judge) {
+      yield* this.runJudge(userInput, originalResponse.text, challengerResponse.text, options)
+    }
+
     yield { type: 'all_complete' }
   }
+
+  private async *runJudge(
+    question: string,
+    originalText: string,
+    challengerText: string,
+    options?: ChatOptions
+  ): AsyncGenerator<MirrorEvent, void> {
+    yield { type: 'synthesizing' }
+
+    const messages = buildJudgeMessages(question, originalText, challengerText)
+    const systemPrompt = buildJudgeSystemPrompt()
+    const stream = this.streamWithRetry(this.judge!, messages, systemPrompt, options)
+    const accumulator = createAccumulator()
+
+    for await (const chunk of stream) {
+      accumulator.add(chunk)
+      yield { type: 'synthesis_chunk', chunk }
+    }
+
+    const response = accumulator.complete()
+    const agreementScore = extractAgreementScore(response.text)
+
+    const result: SynthesisResult = {
+      text: response.text,
+      agreementScore,
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
+    }
+
+    yield { type: 'synthesis_complete', result }
+  }
+
   private async *streamWithRetry(
     adapter: BrainAdapter,
     messages: ConversationMessage[],

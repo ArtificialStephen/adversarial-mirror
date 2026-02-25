@@ -7,6 +7,8 @@ interface BrainPanelProps {
   /** Explicit column width (outer, including border + padding). */
   width?: number
   marginRight?: number
+  /** Border and title color. Defaults to 'cyan'. */
+  borderColor?: string
 }
 
 export function BrainPanel({
@@ -14,12 +16,13 @@ export function BrainPanel({
   children,
   width,
   marginRight,
+  borderColor = 'cyan',
 }: BrainPanelProps): JSX.Element {
   return (
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="cyan"
+      borderColor={borderColor}
       padding={1}
       flexGrow={width ? 0 : 1}
       flexShrink={1}
@@ -27,7 +30,7 @@ export function BrainPanel({
       width={width}
       marginRight={marginRight}
     >
-      <Text bold color="cyan">{title}</Text>
+      <Text bold color={borderColor}>{title}</Text>
       {children}
     </Box>
   )

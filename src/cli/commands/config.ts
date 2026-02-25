@@ -97,6 +97,33 @@ export async function runConfigInit(): Promise<void> {
       throw new Error(`Unknown challenger brain id: ${challengerBrainId}`)
     }
 
+    const judgeEnabled = await askYesNo(
+      rl,
+      `Enable judge synthesis pass? (y/n) [${config.session.judgeEnabled ? 'y' : 'n'}]: `,
+      config.session.judgeEnabled
+    )
+
+    let judgeBrainId = config.session.judgeBrainId
+    if (judgeEnabled) {
+      judgeBrainId = await askRequired(
+        rl,
+        `Judge brain id (${availableBrains}) [${config.session.judgeBrainId}]: `,
+        config.session.judgeBrainId
+      )
+      if (!config.brains.some((brain) => brain.id === judgeBrainId)) {
+        throw new Error(`Unknown judge brain id: ${judgeBrainId}`)
+      }
+    }
+
+    const personaNames = 'vc-skeptic|security-auditor|end-user|regulator|contrarian'
+    const currentPersona = config.session.defaultPersona ?? 'none'
+    const personaAnswer = await askOptional(
+      rl,
+      `Default persona (${personaNames}|none) [${currentPersona}]: `,
+      currentPersona
+    )
+    const defaultPersona = (personaAnswer === 'none' || !personaAnswer) ? undefined : personaAnswer
+
     const updatedKeys = await promptForApiKeys(rl, config)
     if (Object.keys(updatedKeys).length > 0) {
       const persist = await askYesNo(
@@ -122,7 +149,10 @@ export async function runConfigInit(): Promise<void> {
         challengerBrainId,
         defaultIntensity: intensity,
         historyWindowSize,
-        autoClassify
+        autoClassify,
+        judgeEnabled,
+        judgeBrainId,
+        defaultPersona,
       },
       ui: {
         ...config.ui,
@@ -186,6 +216,15 @@ async function askRequired(
     return fallback
   }
   return askRequired(rl, prompt, fallback)
+}
+
+async function askOptional(
+  rl: ReturnType<typeof createInterface>,
+  prompt: string,
+  fallback: string
+): Promise<string> {
+  const answer = (await rl.question(prompt)).trim()
+  return answer || fallback
 }
 
 async function askYesNo(

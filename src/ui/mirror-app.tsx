@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, Static, Text, useInput, useStdout } from 'ink'
-import type { BrainResult, IntentResult } from '../types/index.js'
+import type { BrainResult, IntentResult, SynthesisResult } from '../types/index.js'
 import type { MirrorEngine } from '../engine/mirror-engine.js'
 import { Session } from '../engine/session.js'
 import { addHistoryEntry } from '../history/store.js'
@@ -21,20 +21,23 @@ interface CompletedExchange {
   intent?: IntentResult
   original: string
   challenger?: string
+  synthesis?: string
+  agreementScore?: number
   isMirrored: boolean
-  /** Terminal width captured at completion time — frozen so Static renders at the right width. */
-  columns: number
 }
 
+// StaticItem union — items written permanently to stdout via <Static>.
+// The header is the first item (added at mount); exchanges are appended as queries complete.
 type StaticItem =
-  | { kind: 'header'; id: 'header'; lines: string[]; originalId: string; challengerId?: string; intensity: string }
-  | { kind: 'exchange'; id: string; exchange: CompletedExchange; originalId: string; challengerId?: string }
+  | { type: 'header'; id: 'header' }
+  | { type: 'exchange'; id: string; exchange: CompletedExchange; originalId: string; challengerId?: string; columns: number }
 
 export interface MirrorAppProps {
   engine: MirrorEngine
   session: Session
   originalId: string
   challengerId?: string
+  judgerId?: string
   intensity: string
   layout?: 'side-by-side' | 'stacked'
   showTokenCounts?: boolean
@@ -79,34 +82,46 @@ function GradientLine({ line, bold }: { line: string; bold?: boolean }): JSX.Ele
   )
 }
 
-// ── Static sub-components (rendered once, never re-rendered) ───────────────────
+// ── Sub-components ─────────────────────────────────────────────────────────────
 
-function HeaderView({
+// Wrapped in memo so re-renders during streaming don't touch the header.
+const HeaderView = React.memo(function HeaderView({
   lines, originalId, challengerId, intensity
 }: {
   lines: string[]; originalId: string; challengerId?: string; intensity: string
 }): JSX.Element {
   return (
     <Box flexDirection="column" marginBottom={1}>
-      {lines.map((line, i) =>
-        i < lines.length - 1
-          ? <GradientLine key={i} line={line} bold />
-          : <Text key={i} color="gray" wrap="truncate">{line}</Text>
-      )}
+      {lines.map((line, i) => <GradientLine key={i} line={line} bold />)}
       <Text color="gray" dimColor>
         {'  '}{originalId}{challengerId ? ` vs ${challengerId}` : '  [direct mode]'}{'  '}[{intensity}]
       </Text>
     </Box>
   )
+})
+
+// Strip the "AGREEMENT: X%" metadata line — the score is already in the panel
+// title, so showing it again inside the panel body is redundant noise.
+function stripAgreementHeader(text: string): string {
+  return text.replace(/^AGREEMENT:\s*-?\d+%[^\n]*\n?\n?/i, '').trimStart()
 }
 
-function ExchangeView({
-  exchange, originalId, challengerId
+// Wrapped in memo: completed exchanges never change after they're added, so
+// they should never re-render during the next query's streaming updates.
+const ExchangeView = React.memo(function ExchangeView({
+  exchange, originalId, challengerId, columns
 }: {
-  exchange: CompletedExchange; originalId: string; challengerId?: string
+  exchange: CompletedExchange
+  originalId: string
+  challengerId?: string
+  columns: number
 }): JSX.Element {
-  const sideBySide = exchange.isMirrored && Boolean(exchange.challenger) && exchange.columns >= 80
-  const panelWidth = sideBySide ? Math.floor((exchange.columns - 1) / 2) : exchange.columns
+  const sideBySide = exchange.isMirrored && Boolean(exchange.challenger) && columns >= 80
+  const panelWidth = sideBySide ? Math.floor((columns - 1) / 2) : columns
+
+  const scoreLabel = exchange.agreementScore !== undefined
+    ? `  [agreement: ${exchange.agreementScore}%]`
+    : ''
 
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -137,9 +152,20 @@ function ExchangeView({
           </BrainPanel>
         )}
       </Box>
+      {exchange.synthesis && (
+        <Box marginTop={1}>
+          <BrainPanel
+            title={`SYNTHESIS${scoreLabel}`}
+            width={columns}
+            borderColor="yellow"
+          >
+            <Text wrap="wrap">{stripAgreementHeader(exchange.synthesis)}</Text>
+          </BrainPanel>
+        </Box>
+      )}
     </Box>
   )
-}
+})
 
 // ── Header file loading ────────────────────────────────────────────────────────
 
@@ -179,6 +205,13 @@ function fitLines(lines: string[], cols: number): string[] {
   return aligned.map(l => (l.length > cols ? l.slice(0, cols) : l))
 }
 
+function tailLines(text: string, maxLines: number): string {
+  if (maxLines <= 0) return ''
+  const lines = text.split(/\r?\n/)
+  if (lines.length <= maxLines) return text
+  return lines.slice(-maxLines).join('\n')
+}
+
 // ── Formatting ─────────────────────────────────────────────────────────────────
 
 function formatTokens(input?: number, output?: number): string | null {
@@ -193,6 +226,7 @@ export function MirrorApp({
   session,
   originalId,
   challengerId,
+  judgerId,
   intensity,
   showTokenCounts = false,
   showLatency = true,
@@ -200,52 +234,64 @@ export function MirrorApp({
 }: MirrorAppProps): JSX.Element {
   const { stdout } = useStdout()
   const columns = stdout?.columns ?? 120
+  const rows = stdout?.rows ?? 40
 
-  // Build and freeze the header item on first render — captured once, never changes
-  const initialStaticItems = useMemo<StaticItem[]>(() => {
+  const headerLines = useMemo(() => {
     const raw = loadRawHeaderLines()
-    const lines = fitLines(raw, Math.max(1, columns - 1))
-    return [{ kind: 'header', id: 'header', lines, originalId, challengerId, intensity }]
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // intentionally empty — header is frozen at mount
+    return fitLines(raw, Math.max(1, columns - 1))
+  }, [])
 
-  const [completedItems, setCompletedItems] = useState<Array<StaticItem & { kind: 'exchange' }>>([])
-
-  // Static receives: [header, ...completed exchanges]
-  // Items can only be appended — Ink renders new ones and stamps them permanently above
-  const allStaticItems = useMemo<StaticItem[]>(
-    () => [...initialStaticItems, ...completedItems],
-    [initialStaticItems, completedItems]
-  )
+  // -- Static content (header + completed exchanges) --
+  const [staticItems, setStaticItems] = useState<StaticItem[]>([
+    { type: 'header', id: 'header' }
+  ])
 
   // ── Dynamic UI state ─────────────────────────────────────────────────────────
   const [input, setInput] = useState('')
   const [activeQuestion, setActiveQuestion] = useState('')
   const [currentOriginal, setCurrentOriginal] = useState('')
   const [currentChallenger, setCurrentChallenger] = useState('')
+  const [currentSynthesis, setCurrentSynthesis] = useState('')
   const [isThinking, setIsThinking] = useState(false)
   const [isClassifying, setIsClassifying] = useState(false)
+  const [isSynthesizing, setIsSynthesizing] = useState(false)
   const [intent, setIntent] = useState<IntentResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [originalStats, setOriginalStats] = useState<BrainResult | null>(null)
   const [challengerStats, setChallengerStats] = useState<BrainResult | null>(null)
+  const [synthesisStats, setSynthesisStats] = useState<SynthesisResult | null>(null)
   const [turnCount, setTurnCount] = useState(0)
 
-  // ── Refs (not reactive — avoid triggering re-renders) ────────────────────────
+  // ── Refs ─────────────────────────────────────────────────────────────────────
   const runningRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
   const pendingOrigRef = useRef('')
   const pendingChalRef = useRef('')
+  const pendingSynthRef = useRef('')
+  const pendingExchangeRef = useRef<StaticItem | null>(null)
   const startTimesRef = useRef(new Map<string, number>())
   const columnsRef = useRef(columns)
 
   useEffect(() => { columnsRef.current = columns }, [columns])
 
-  // Batch streaming text updates at 60 ms — prevents a re-render on every token
+  // Defer Static writes until after streaming panels are cleared.
+  useEffect(() => {
+    if (isThinking) return
+    if (!pendingExchangeRef.current) return
+    const item = pendingExchangeRef.current
+    pendingExchangeRef.current = null
+    const timer = setTimeout(() => {
+      setStaticItems(prev => [...prev, item])
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [isThinking])
+
+  // Batch streaming text updates at 60 ms to avoid a re-render on every token.
   useEffect(() => {
     const id = setInterval(() => {
       setCurrentOriginal(pendingOrigRef.current)
       setCurrentChallenger(pendingChalRef.current)
+      setCurrentSynthesis(pendingSynthRef.current)
     }, 60)
     return () => clearInterval(id)
   }, [])
@@ -253,10 +299,8 @@ export function MirrorApp({
   // ── Layout ───────────────────────────────────────────────────────────────────
   const showChallengerPanel = Boolean(challengerId) && (intent?.shouldMirror ?? true)
   const showSideBySide = showChallengerPanel && columns >= 80
-  // Always give BrainPanel an explicit pixel width so its border spans the full
-  // terminal in single-brain mode. Without this, flex + content-sized layout
-  // causes the border to hug the text rather than the terminal edge.
   const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : columns
+  const liveLineLimit = Math.max(6, Math.min(18, rows - 10))
 
   const formatText = useCallback(
     (text: string) => (syntaxHighlighting ? highlightCodeBlocks(text) : text),
@@ -276,20 +320,26 @@ export function MirrorApp({
     setActiveQuestion(question)
     setIsThinking(true)
     setIsClassifying(false)
+    setIsSynthesizing(false)
     setOriginalStats(null)
     setChallengerStats(null)
+    setSynthesisStats(null)
     pendingOrigRef.current = ''
     pendingChalRef.current = ''
+    pendingSynthRef.current = ''
     setCurrentOriginal('')
     setCurrentChallenger('')
+    setCurrentSynthesis('')
 
     const history = session.getHistory()
     session.addUser(question)
 
     let originalBuffer = ''
     let challengerBuffer = ''
+    let synthesisBuffer = ''
     let originalResult: BrainResult | null = null
     let challengerResult: BrainResult | undefined
+    let synthResult: SynthesisResult | undefined
     let intentResult: IntentResult | undefined
     let isMirrored = Boolean(challengerId)
 
@@ -352,6 +402,21 @@ export function MirrorApp({
           }
         }
 
+        if (event.type === 'synthesizing') {
+          setIsSynthesizing(true)
+        }
+
+        if (event.type === 'synthesis_chunk') {
+          synthesisBuffer += event.chunk.delta
+          pendingSynthRef.current = synthesisBuffer
+        }
+
+        if (event.type === 'synthesis_complete') {
+          setIsSynthesizing(false)
+          synthResult = event.result
+          setSynthesisStats(event.result)
+        }
+
         if (event.type === 'all_complete' && originalResult) {
           addHistoryEntry({
             id: entryId,
@@ -362,30 +427,37 @@ export function MirrorApp({
             intent: intentResult,
           })
 
-          // Capture terminal width at completion time — Static renders with this width forever
-          const cols = columnsRef.current
           const exchange: CompletedExchange = {
             id: entryId,
             question,
             intent: intentResult,
             original: formatText(originalResult.text),
             challenger: challengerResult ? formatText(challengerResult.text) : undefined,
+            synthesis: synthResult ? formatText(synthResult.text) : undefined,
+            agreementScore: synthResult?.agreementScore,
             isMirrored,
-            columns: cols,
           }
 
-          setCompletedItems(prev => [
-            ...prev,
-            { kind: 'exchange', id: entryId, exchange, originalId, challengerId },
-          ])
+          // Defer Static write until after the streaming panels are cleared.
+          pendingExchangeRef.current = {
+            type: 'exchange',
+            id: entryId,
+            exchange,
+            originalId,
+            challengerId,
+            columns: columnsRef.current
+          }
           setTurnCount(prev => prev + 1)
-
-          // Clear the streaming area — Static will show the completed exchange
           setActiveQuestion('')
           pendingOrigRef.current = ''
           pendingChalRef.current = ''
+          pendingSynthRef.current = ''
           setCurrentOriginal('')
           setCurrentChallenger('')
+          setCurrentSynthesis('')
+          setIsSynthesizing(false)
+          setIsClassifying(false)
+          setIsThinking(false)
         }
 
         if (event.type === 'error') {
@@ -399,6 +471,7 @@ export function MirrorApp({
     } finally {
       setIsThinking(false)
       setIsClassifying(false)
+      setIsSynthesizing(false)
       runningRef.current = false
       abortRef.current = null
     }
@@ -421,6 +494,7 @@ export function MirrorApp({
   // ── Status bar ───────────────────────────────────────────────────────────────
   const statusParts: string[] = []
   if (isClassifying) statusParts.push('Classifying...')
+  else if (isSynthesizing) statusParts.push('Synthesizing...')
   else if (isThinking) statusParts.push('Thinking...')
   else statusParts.push('Ready')
 
@@ -431,6 +505,10 @@ export function MirrorApp({
       const chalT = formatTokens(challengerStats.inputTokens, challengerStats.outputTokens)
       if (chalT) statusParts.push(`chal ${chalT}`)
     }
+    if (synthesisStats) {
+      const synthT = formatTokens(synthesisStats.inputTokens, synthesisStats.outputTokens)
+      if (synthT) statusParts.push(`synth ${synthT}`)
+    }
   }
   if (showLatency && originalStats?.latencyMs != null) {
     statusParts.push(`orig ${(originalStats.latencyMs / 1000).toFixed(1)}s`)
@@ -438,44 +516,43 @@ export function MirrorApp({
   if (showLatency && challengerStats?.latencyMs != null) {
     statusParts.push(`chal ${(challengerStats.latencyMs / 1000).toFixed(1)}s`)
   }
+  if (synthesisStats?.agreementScore !== undefined) {
+    statusParts.push(`agreement ${synthesisStats.agreementScore}%`)
+  }
   statusParts.push(`${turnCount} turn${turnCount !== 1 ? 's' : ''}`)
   statusParts.push('Ctrl+C to exit')
 
+  const synthScoreLabel = synthesisStats?.agreementScore !== undefined
+    ? `  [agreement: ${synthesisStats.agreementScore}%]`
+    : ''
+
   // ── Render ───────────────────────────────────────────────────────────────────
+  // Header + completed exchanges are written via <Static> so they never redraw,
+  // eliminating the flash on every keystroke in the input field.
   return (
     <Box flexDirection="column">
 
-      {/*
-       * Static renders each item ONCE and stamps it into the terminal scroll
-       * buffer permanently — just like normal terminal output. This means:
-       *   - History never redraws or flickers
-       *   - The terminal resizes gracefully (completed turns don't move)
-       *   - Ink's dynamic area stays small (only streaming panels + input)
-       */}
-      <Static items={allStaticItems}>
-        {(item) => {
-          if (item.kind === 'header') {
-            return (
+      <Static items={staticItems}>
+        {(item) => (
+          <React.Fragment key={item.id}>
+            {item.type === 'header' ? (
               <HeaderView
-                key="header"
-                lines={item.lines}
+                lines={headerLines}
+                originalId={originalId}
+                challengerId={challengerId}
+                intensity={intensity}
+              />
+            ) : (
+              <ExchangeView
+                exchange={item.exchange}
                 originalId={item.originalId}
                 challengerId={item.challengerId}
-                intensity={item.intensity}
+                columns={item.columns}
               />
-            )
-          }
-          return (
-            <ExchangeView
-              key={item.id}
-              exchange={item.exchange}
-              originalId={item.originalId}
-              challengerId={item.challengerId}
-            />
-          )
-        }}
+            )}
+          </React.Fragment>
+        )}
       </Static>
-
       {/* In-progress streaming — only present while a query is running */}
       {isThinking && activeQuestion && (
         <Box flexDirection="column">
@@ -499,7 +576,7 @@ export function MirrorApp({
               width={panelWidth}
               marginRight={showSideBySide && showChallengerPanel ? 1 : 0}
             >
-              <StreamingText value={currentOriginal} />
+              <StreamingText value={tailLines(currentOriginal, liveLineLimit)} />
             </BrainPanel>
 
             {showChallengerPanel && (
@@ -507,10 +584,26 @@ export function MirrorApp({
                 title={`CHALLENGER  ${challengerId}  [${intensity}]`}
                 width={panelWidth}
               >
-                <StreamingText value={currentChallenger} />
+                <StreamingText value={tailLines(currentChallenger, liveLineLimit)} />
               </BrainPanel>
             )}
           </Box>
+
+          {/* Live synthesis panel — streams the judge's response in real time.
+              Appears only while the judge is running or has streamed content.
+              Disappears atomically in the same render that shows the completed
+              exchange, so it never overlaps with the static panel below. */}
+          {(isSynthesizing || currentSynthesis) && (
+            <Box marginTop={1}>
+              <BrainPanel
+                title={`SYNTHESIS${isSynthesizing ? '  synthesizing...' : synthScoreLabel}  ${judgerId ?? ''}`}
+                width={columns}
+                borderColor="yellow"
+              >
+                <StreamingText value={tailLines(stripAgreementHeader(currentSynthesis), liveLineLimit)} />
+              </BrainPanel>
+            </Box>
+          )}
         </Box>
       )}
 

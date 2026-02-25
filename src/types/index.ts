@@ -73,10 +73,20 @@ export interface HistoryEntry {
 
 export type Intensity = 'mild' | 'moderate' | 'aggressive'
 
+export interface SynthesisResult {
+  text: string
+  agreementScore?: number
+  inputTokens?: number
+  outputTokens?: number
+}
+
 export type MirrorEvent =
   | { type: 'classifying' }
   | { type: 'classified'; result: IntentResult }
   | { type: 'stream_chunk'; brainId: string; chunk: StreamChunk }
   | { type: 'brain_complete'; brainId: string; response: CompletedResponse }
+  | { type: 'synthesizing' }
+  | { type: 'synthesis_chunk'; chunk: StreamChunk }
+  | { type: 'synthesis_complete'; result: SynthesisResult }
   | { type: 'all_complete' }
   | { type: 'error'; error: Error }

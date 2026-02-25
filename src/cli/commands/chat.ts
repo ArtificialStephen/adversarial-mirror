@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import React from 'react'
 import type { Command } from 'commander'
 import { render } from 'ink'
@@ -11,7 +13,11 @@ import { MirrorApp } from '../../ui/mirror-app.js'
 // Commander v12 passes (localOptions, command) for commands with no positional args.
 // Global flags live on command.parent.opts() — reading from localOptions would always be {}.
 export function runChat(_localOpts: Record<string, unknown>, command: Command): void {
-  const opts = command.parent?.opts() ?? {}
+  // Merge local and parent opts — local opts come from command-level flags (--file)
+  const parentOpts = command.parent?.opts() ?? {}
+  const localOpts = command.opts()
+  const opts = { ...parentOpts, ...localOpts }
+
   try {
     const config = loadConfig()
     const originalId =
@@ -22,6 +28,9 @@ export function runChat(_localOpts: Record<string, unknown>, command: Command): 
     const classifyEnabled = opts['classify'] !== false
     const intensity =
       (opts['intensity'] as string | undefined) ?? config.session.defaultIntensity
+    const judgeEnabled = opts['judge'] !== false && config.session.judgeEnabled
+    const persona = (opts['persona'] as string | undefined) ?? config.session.defaultPersona
+    const filePath = opts['file'] as string | undefined
 
     const brainConfig = config.brains.find(b => b.id === originalId)
     if (!brainConfig) {
@@ -33,7 +42,30 @@ export function runChat(_localOpts: Record<string, unknown>, command: Command): 
     const challengerAdapter =
       mirrorEnabled && challengerConfig ? createAdapter(challengerConfig) : undefined
 
+    // Build judge adapter when mirroring is enabled and judge is requested
+    let judgeAdapter = undefined
+    if (mirrorEnabled && challengerAdapter && judgeEnabled) {
+      const judgeId = (opts['judgeBrain'] as string | undefined) ?? config.session.judgeBrainId
+      const judgeConfig = config.brains.find(b => b.id === judgeId)
+      if (judgeConfig) {
+        judgeAdapter = createAdapter(judgeConfig)
+      }
+    }
+
     const session = new Session(config.session.historyWindowSize)
+
+    // Inject file content as the first exchange if --file is provided
+    if (filePath) {
+      try {
+        const content = readFileSync(filePath, 'utf8')
+        const name = basename(filePath)
+        session.addUser(`[FILE: ${name}]\n${content}`)
+        session.addAssistant(`I have read the file "${name}". Ask me anything about it.`)
+      } catch (err) {
+        throw new Error(`Could not read file: ${filePath} — ${(err as Error).message}`)
+      }
+    }
+
     const classifier = buildIntentClassifier(config, Boolean(opts['debug']))
     const engine = new MirrorEngine({
       original: originalAdapter,
@@ -43,6 +75,8 @@ export function runChat(_localOpts: Record<string, unknown>, command: Command): 
         mirrorEnabled && classifyEnabled && config.session.autoClassify,
       classifier,
       debug: Boolean(opts['debug']),
+      judge: judgeAdapter,
+      persona,
     })
 
     const app = render(
@@ -51,6 +85,7 @@ export function runChat(_localOpts: Record<string, unknown>, command: Command): 
         session,
         originalId: originalAdapter.id,
         challengerId: challengerAdapter?.id,
+        judgerId: judgeAdapter?.id,
         intensity,
         layout: config.ui.layout,
         showTokenCounts: config.ui.showTokenCounts,

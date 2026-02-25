@@ -28,16 +28,21 @@ program
   .option('--challenger <brainId>', 'override challenger brain')
   .option('--no-mirror', 'disable mirroring')
   .option('--no-classify', 'disable intent classification')
+  .option('--no-judge', 'disable judge synthesis pass')
+  .option('--judge-brain <brainId>', 'override judge brain id')
+  .option('--persona <name>', 'persona lens: vc-skeptic|security-auditor|end-user|regulator|contrarian')
   .option('--debug', 'enable debug logging')
 
 program
   .command('chat')
   .description('Interactive session')
+  .option('--file <path>', 'load file as context before the session starts')
   .action(runChat)
 
 program
   .command('mirror <question>')
   .description('One-shot query')
+  .option('--file <path>', 'load file as context (or pipe via stdin)')
   .action(runMirror)
 
 const config = program.command('config').description('Config commands')

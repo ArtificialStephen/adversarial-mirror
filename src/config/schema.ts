@@ -14,7 +14,10 @@ export const configSchema = z.object({
     challengerBrainId: z.string().min(1),
     defaultIntensity: z.enum(['mild', 'moderate', 'aggressive']),
     historyWindowSize: z.number().int().positive(),
-    autoClassify: z.boolean()
+    autoClassify: z.boolean(),
+    judgeEnabled: z.boolean().default(true),
+    judgeBrainId: z.string().min(1).default('claude-sonnet-4-6'),
+    defaultPersona: z.string().optional()
   }),
   ui: z.object({
     layout: z.enum(['side-by-side', 'stacked']),

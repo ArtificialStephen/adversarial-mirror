@@ -4,6 +4,13 @@ import { HeuristicIntentClassifier } from '../../src/engine/intent-classifier.js
 import { MirrorEngine } from '../../src/engine/mirror-engine.js'
 import type { MirrorEvent } from '../../src/types/index.js'
 
+// A mock judge that returns a response with an agreement score
+class MockJudgeAdapter extends MockAdapter {
+  constructor() {
+    super('judge', 'AGREEMENT: 73%\nBoth models agreed on the core answer.\n\nSYNTHESIS\nUse microservices only when you need independent scalability.\n\nBLIND SPOT\nBoth ignored operational complexity costs.')
+  }
+}
+
 function makeEngine(overrides: Partial<ConstructorParameters<typeof MirrorEngine>[0]> = {}) {
   return new MirrorEngine({
     original: new MockAdapter('original', 'This is the original answer.'),
@@ -126,5 +133,52 @@ describe('MirrorEngine — history forwarding', () => {
     ]
     const events = await collect(engine.run('follow-up question', history))
     expect(events.some(e => e.type === 'all_complete')).toBe(true)
+  })
+})
+
+describe('MirrorEngine — judge pass', () => {
+  it('emits synthesizing, synthesis_chunk, synthesis_complete before all_complete when judge is set', async () => {
+    const engine = makeEngine({ judge: new MockJudgeAdapter() })
+    const events = await collect(engine.run('Should I use microservices?', []))
+
+    expect(events.some(e => e.type === 'synthesizing')).toBe(true)
+    expect(events.some(e => e.type === 'synthesis_chunk')).toBe(true)
+    expect(events.some(e => e.type === 'synthesis_complete')).toBe(true)
+
+    const synthIdx = events.findIndex(e => e.type === 'synthesizing')
+    const synthCompleteIdx = events.findIndex(e => e.type === 'synthesis_complete')
+    const allCompleteIdx = events.findIndex(e => e.type === 'all_complete')
+
+    expect(synthIdx).toBeGreaterThan(0)
+    expect(synthCompleteIdx).toBeGreaterThan(synthIdx)
+    expect(allCompleteIdx).toBeGreaterThan(synthCompleteIdx)
+  })
+
+  it('synthesis_complete contains an agreement score', async () => {
+    const engine = makeEngine({ judge: new MockJudgeAdapter() })
+    const events = await collect(engine.run('Should I use microservices?', []))
+
+    const synthComplete = events.find(e => e.type === 'synthesis_complete') as
+      | Extract<MirrorEvent, { type: 'synthesis_complete' }>
+      | undefined
+
+    expect(synthComplete).toBeDefined()
+    expect(synthComplete?.result.agreementScore).toBe(73)
+  })
+
+  it('does not emit synthesizing events when judge is not set', async () => {
+    const engine = makeEngine() // no judge
+    const events = await collect(engine.run('Should I use microservices?', []))
+
+    expect(events.some(e => e.type === 'synthesizing')).toBe(false)
+    expect(events.some(e => e.type === 'synthesis_chunk')).toBe(false)
+    expect(events.some(e => e.type === 'synthesis_complete')).toBe(false)
+    expect(events[events.length - 1].type).toBe('all_complete')
+  })
+
+  it('all_complete still fires last when judge is disabled', async () => {
+    const engine = makeEngine()
+    const events = await collect(engine.run('Should I use microservices?', []))
+    expect(events[events.length - 1].type).toBe('all_complete')
   })
 })
