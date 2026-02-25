@@ -8,7 +8,7 @@ interface StreamingTextProps {
 
 export function StreamingText({ value, dim }: StreamingTextProps): JSX.Element {
   return (
-    <Text dimColor={dim} wrap="wrap">
+    <Text dimColor={dim} wrap="truncate">
       {value}
       <Text color="cyan">▌</Text>
     </Text>
