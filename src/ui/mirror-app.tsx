@@ -212,6 +212,15 @@ function tailLines(text: string, maxLines: number): string {
   return lines.slice(-maxLines).join('\n')
 }
 
+// For live streaming panels: tail to maxLines AND truncate each line to maxWidth
+// so Ink never has to wrap, keeping the dynamic area height exactly predictable.
+function liveLines(text: string, maxLines: number, maxWidth: number): string {
+  if (maxLines <= 0 || !text) return ''
+  const lines = text.split(/\r?\n/)
+  const tail = lines.length > maxLines ? lines.slice(-maxLines) : lines
+  return tail.map(l => l.length > maxWidth ? l.slice(0, maxWidth) : l).join('\n')
+}
+
 // ── Formatting ─────────────────────────────────────────────────────────────────
 
 function formatTokens(input?: number, output?: number): string | null {
@@ -304,7 +313,10 @@ export function MirrorApp({
   const showChallengerPanel = Boolean(challengerId) && (intent?.shouldMirror ?? true)
   const showSideBySide = showChallengerPanel && columns >= 80
   const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : columns
-  const liveLineLimit = Math.max(6, Math.min(18, rows - 10))
+  // Each logical line can wrap to 2–3 terminal lines with wrap="wrap".
+  // Divide available rows (minus chrome) by 2 so two side-by-side panels
+  // together never exceed the terminal height → Ink never loses cursor tracking.
+  const liveLineLimit = Math.max(4, Math.min(12, Math.floor((rows - 14) / 2)))
 
   const formatText = useCallback(
     (text: string) => (syntaxHighlighting ? highlightCodeBlocks(text) : text),
@@ -582,7 +594,7 @@ export function MirrorApp({
               width={panelWidth}
               marginRight={showSideBySide && showChallengerPanel ? 1 : 0}
             >
-              <StreamingText value={tailLines(currentOriginal, liveLineLimit)} />
+              <StreamingText value={liveLines(currentOriginal, liveLineLimit, panelWidth - 4)} />
             </BrainPanel>
 
             {showChallengerPanel && (
@@ -590,7 +602,7 @@ export function MirrorApp({
                 title={`CHALLENGER  ${challengerId}  [${intensity}]`}
                 width={panelWidth}
               >
-                <StreamingText value={tailLines(currentChallenger, liveLineLimit)} />
+                <StreamingText value={liveLines(currentChallenger, liveLineLimit, panelWidth - 4)} />
               </BrainPanel>
             )}
           </Box>
@@ -606,7 +618,7 @@ export function MirrorApp({
                 width={columns}
                 borderColor="yellow"
               >
-                <StreamingText value={tailLines(stripAgreementHeader(currentSynthesis), liveLineLimit)} />
+                <StreamingText value={liveLines(stripAgreementHeader(currentSynthesis), liveLineLimit, columns - 4)} />
               </BrainPanel>
             </Box>
           )}
