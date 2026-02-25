@@ -313,10 +313,12 @@ export function MirrorApp({
   const showChallengerPanel = Boolean(challengerId) && (intent?.shouldMirror ?? true)
   const showSideBySide = showChallengerPanel && columns >= 80
   const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : columns
-  // Each logical line can wrap to 2–3 terminal lines with wrap="wrap".
-  // Divide available rows (minus chrome) by 2 so two side-by-side panels
-  // together never exceed the terminal height → Ink never loses cursor tracking.
-  const liveLineLimit = Math.max(4, Math.min(12, Math.floor((rows - 14) / 2)))
+  // Worst-case dynamic area height (all 3 panels stacked + chrome):
+  //   fixed chrome: question(1) + intent(1) + 3×marginTop(3) + status(1) + input(1) = 7
+  //   per panel: topBorder(1) + topPad(1) + title(1) + content(L) + botPad(1) + botBorder(1) = 5+L
+  //   total: 7 + 3×(5+L) = 22 + 3×L  ≤ rows  →  L ≤ (rows-22)/3
+  // Cap at 8 — more than enough to follow a streaming response.
+  const liveLineLimit = Math.max(1, Math.min(8, Math.floor((rows - 22) / 3)))
 
   const formatText = useCallback(
     (text: string) => (syntaxHighlighting ? highlightCodeBlocks(text) : text),
@@ -576,7 +578,7 @@ export function MirrorApp({
         <Box flexDirection="column">
           <Text bold>
             <Text color="cyan">You: </Text>
-            <Text>{activeQuestion}</Text>
+            <Text wrap="truncate">{activeQuestion}</Text>
           </Text>
 
           {intent ? (
@@ -634,7 +636,7 @@ export function MirrorApp({
 
       {/* Status */}
       <Box marginTop={1}>
-        <Text color="gray" dimColor>{statusParts.join(' · ')}</Text>
+        <Text color="gray" dimColor wrap="truncate">{statusParts.join(' · ')}</Text>
       </Box>
 
       {/* Input prompt */}

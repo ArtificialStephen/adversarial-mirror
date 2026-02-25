@@ -1,6 +1,6 @@
 {
   "name": "adversarial-mirror",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Terminal-first adversarial AI middleware. Routes open-ended prompts to two models in parallel, forces a challenger to surface blind spots, and synthesizes a verdict.",
   "author": "Stephen Marullo",
   "license": "MIT",
