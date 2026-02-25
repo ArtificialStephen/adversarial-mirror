@@ -261,6 +261,7 @@ export function MirrorApp({
   const [challengerStats, setChallengerStats] = useState<BrainResult | null>(null)
   const [synthesisStats, setSynthesisStats] = useState<SynthesisResult | null>(null)
   const [turnCount, setTurnCount] = useState(0)
+  const [commitTick, setCommitTick] = useState(0)
 
   // ── Refs ─────────────────────────────────────────────────────────────────────
   const runningRef = useRef(false)
@@ -278,13 +279,15 @@ export function MirrorApp({
   useEffect(() => {
     if (isThinking) return
     if (!pendingExchangeRef.current) return
+    setCommitTick(tick => tick + 1)
+  }, [isThinking])
+
+  useEffect(() => {
+    if (!pendingExchangeRef.current) return
     const item = pendingExchangeRef.current
     pendingExchangeRef.current = null
-    const timer = setTimeout(() => {
-      setStaticItems(prev => [...prev, item])
-    }, 0)
-    return () => clearTimeout(timer)
-  }, [isThinking])
+    setStaticItems(prev => [...prev, item])
+  }, [commitTick])
 
   // Batch streaming text updates at 60 ms to avoid a re-render on every token.
   useEffect(() => {
