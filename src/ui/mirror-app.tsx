@@ -271,6 +271,7 @@ export function MirrorApp({
   const pendingSynthRef = useRef('')
   const pendingExchangeRef = useRef<StaticItem | null>(null)
   const startTimesRef = useRef(new Map<string, number>())
+  const lastChunkTimesRef = useRef(new Map<string, number>())
   const columnsRef = useRef(columns)
 
   useEffect(() => { columnsRef.current = columns }, [columns])
@@ -355,6 +356,7 @@ export function MirrorApp({
       [originalId, Date.now()],
       ...(challengerId ? [[challengerId, Date.now()] as [string, number]] : []),
     ])
+    lastChunkTimesRef.current = new Map<string, number>()
 
     try {
       for await (const event of engine.run(question, history, { signal: controller.signal })) {
@@ -370,6 +372,7 @@ export function MirrorApp({
         }
 
         if (event.type === 'stream_chunk') {
+          lastChunkTimesRef.current.set(event.brainId, Date.now())
           if (event.brainId === originalId) {
             originalBuffer += event.chunk.delta
             pendingOrigRef.current = originalBuffer
@@ -380,7 +383,8 @@ export function MirrorApp({
         }
 
         if (event.type === 'brain_complete') {
-          const latency = event.completedAt - (startTimesRef.current.get(event.brainId) ?? event.completedAt)
+          const completedAt = lastChunkTimesRef.current.get(event.brainId) ?? Date.now()
+          const latency = completedAt - (startTimesRef.current.get(event.brainId) ?? completedAt)
           if (event.brainId === originalId) {
             const text = event.response.text || originalBuffer
             originalResult = {
