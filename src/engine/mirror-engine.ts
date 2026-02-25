@@ -112,7 +112,7 @@ export class MirrorEngine {
 
     const response = accumulator.complete()
 
-    yield { type: 'brain_complete', brainId: this.original.id, response }
+    yield { type: 'brain_complete', brainId: this.original.id, response, completedAt: Date.now() }
     yield { type: 'all_complete' }
   }
 
@@ -155,6 +155,8 @@ export class MirrorEngine {
     const originalAccumulator = createAccumulator()
     const challengerAccumulator = createAccumulator()
 
+    const completionTimes = new Map<string, number>()
+
     for await (const item of mergeStreams([
       { brainId: this.original.id, stream: originalStream, accumulator: originalAccumulator },
       {
@@ -162,7 +164,7 @@ export class MirrorEngine {
         stream: challengerStream,
         accumulator: challengerAccumulator
       }
-    ])) {
+    ], completionTimes)) {
       yield item
     }
 
@@ -172,12 +174,14 @@ export class MirrorEngine {
     yield {
       type: 'brain_complete',
       brainId: this.original.id,
-      response: originalResponse
+      response: originalResponse,
+      completedAt: completionTimes.get(this.original.id) ?? Date.now()
     }
     yield {
       type: 'brain_complete',
       brainId: this.challenger!.id,
-      response: challengerResponse
+      response: challengerResponse,
+      completedAt: completionTimes.get(this.challenger!.id) ?? Date.now()
     }
 
     // ── Judge pass ───────────────────────────────────────────────────────────
@@ -295,7 +299,8 @@ function createAccumulator() {
 }
 
 async function* mergeStreams(
-  entries: MergeEntry[]
+  entries: MergeEntry[],
+  completionTimes: Map<string, number>
 ): AsyncGenerator<MirrorEvent, void> {
   const pending = entries.map((entry) => ({
     entry,
@@ -310,6 +315,7 @@ async function* mergeStreams(
     const current = pending[index]
 
     if (result.done) {
+      completionTimes.set(current.entry.brainId, Date.now())
       pending.splice(index, 1)
       continue
     }

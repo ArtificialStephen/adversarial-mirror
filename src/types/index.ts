@@ -84,7 +84,7 @@ export type MirrorEvent =
   | { type: 'classifying' }
   | { type: 'classified'; result: IntentResult }
   | { type: 'stream_chunk'; brainId: string; chunk: StreamChunk }
-  | { type: 'brain_complete'; brainId: string; response: CompletedResponse }
+  | { type: 'brain_complete'; brainId: string; response: CompletedResponse; completedAt: number }
   | { type: 'synthesizing' }
   | { type: 'synthesis_chunk'; chunk: StreamChunk }
   | { type: 'synthesis_complete'; result: SynthesisResult }

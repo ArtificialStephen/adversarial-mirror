@@ -380,7 +380,7 @@ export function MirrorApp({
         }
 
         if (event.type === 'brain_complete') {
-          const latency = Date.now() - (startTimesRef.current.get(event.brainId) ?? Date.now())
+          const latency = event.completedAt - (startTimesRef.current.get(event.brainId) ?? event.completedAt)
           if (event.brainId === originalId) {
             const text = event.response.text || originalBuffer
             originalResult = {
