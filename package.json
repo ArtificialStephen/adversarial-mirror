@@ -4,13 +4,13 @@
   "description": "Terminal-first adversarial AI middleware. Routes open-ended prompts to two models in parallel, forces a challenger to surface blind spots, and synthesizes a verdict.",
   "author": "Stephen Marullo",
   "license": "MIT",
-  "homepage": "https://github.com/StephenMarullo/adversarial-mirror#readme",
+  "homepage": "https://github.com/ArtificialStephen/adversarial-mirror#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/StephenMarullo/adversarial-mirror.git"
+    "url": "git+https://github.com/ArtificialStephen/adversarial-mirror.git"
   },
   "bugs": {
-    "url": "https://github.com/StephenMarullo/adversarial-mirror/issues"
+    "url": "https://github.com/ArtificialStephen/adversarial-mirror/issues"
   },
   "keywords": [
     "ai",

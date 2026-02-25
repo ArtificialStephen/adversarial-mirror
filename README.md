@@ -57,7 +57,7 @@ npm install -g adversarial-mirror
 Or build from source:
 
 ```bash
-git clone https://github.com/StephenMarullo/adversarial-mirror
+git clone https://github.com/ArtificialStephen/adversarial-mirror
 cd adversarial-mirror
 npm install && npm run build
 npm link
@@ -361,7 +361,7 @@ Ctrl+C while streaming  → cancel current request
 ## Development
 
 ```bash
-git clone https://github.com/StephenMarullo/adversarial-mirror
+git clone https://github.com/ArtificialStephen/adversarial-mirror
 cd adversarial-mirror
 npm install
 

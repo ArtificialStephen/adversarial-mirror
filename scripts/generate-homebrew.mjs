@@ -14,7 +14,7 @@ if (!token) {
 }
 
 const repo =
-  process.env.GITHUB_REPOSITORY ?? 'StephenMarullo/adversarial-mirror'
+  process.env.GITHUB_REPOSITORY ?? 'ArtificialStephen/adversarial-mirror'
 
 const release = await fetchJson(
   `https://api.github.com/repos/${repo}/releases/tags/${tag}`,
