@@ -169,6 +169,17 @@ export class MirrorEngine {
     const originalResponse = originalAccumulator.complete()
     const challengerResponse = challengerAccumulator.complete()
 
+    yield {
+      type: 'brain_complete',
+      brainId: this.original.id,
+      response: originalResponse
+    }
+    yield {
+      type: 'brain_complete',
+      brainId: this.challenger!.id,
+      response: challengerResponse
+    }
+
     // ── Judge pass ───────────────────────────────────────────────────────────
     if (this.judge) {
       yield* this.runJudge(userInput, originalResponse.text, challengerResponse.text, options)
@@ -300,11 +311,6 @@ async function* mergeStreams(
 
     if (result.done) {
       pending.splice(index, 1)
-      yield {
-        type: 'brain_complete',
-        brainId: current.entry.brainId,
-        response: current.entry.accumulator.complete()
-      }
       continue
     }
 
