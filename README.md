@@ -1,18 +1,21 @@
+<pre>
+<span style="color:#00D2FF"> ________                             _____ ______   ___  ________  ________  ________  ________     </span>
+<span style="color:#3A7BD5">|\   __  \                           |\   _ \  _   \|\  \|\   __  \|\   __  \|\   __  \|\   __  \    </span>
+<span style="color:#7F5AF0">\ \  \|\  \        ____________      \ \  \\\__\ \  \ \  \ \  \|\  \ \  \|\  \ \  \|\  \ \  \|\  \   </span>
+<span style="color:#FF6EC7"> \ \   __  \      |\____________\     \ \  \\|__| \  \ \  \ \   _  _\ \   _  _\ \  \\\  \ \   _  _\  </span>
+<span style="color:#FFB86C">  \ \  \ \  \     \|____________|      \ \  \    \ \  \ \  \ \  \\  \\ \  \\  \\ \  \\\  \ \  \\  \| </span>
+<span style="color:#3A7BD5">   \ \__\ \__\                          \ \__\    \ \__\ \__\ \__\\ _\\ \__\\ _\\ \_______\ \__\\ _\ </span>
+<span style="color:#00D2FF">    \|__|\|__|                           \|__|     \|__|\|__|\|__|\|__|\|__|\|__|\|_______|\|__|\|__|</span>
+</pre>
+
 # Adversarial Mirror
 
-A CLI middleware that forks every prompt to two AI models in parallel — an **original** brain and an **adversarial challenger** — then streams both responses side-by-side in real time.
+A terminal-first CLI that mirrors every prompt to two models in parallel and shows the original, the adversarial challenger, and an optional judge synthesis in real time.
 
-**Why:** Every AI model has systematic blind spots. The challenger is explicitly prompted to surface flaws, hidden assumptions, and counter-arguments that you'll never get from a single model. Combats AI sycophancy and echo chambers.
-
-```
-Your question
-    │
-    ├── factual / code / math ──► single brain (direct)
-    │
-    └── opinion / analysis / prediction ──► parallel fork
-            ├── Brain A: standard answer
-            └── Brain B: adversarial challenge ← the differentiator
-```
+**Why it works**
+- The challenger is forced to surface blind spots and counter-arguments instead of echoing you.
+- The judge synthesizes both answers and calls out what both missed.
+- The UI is built for focus: completed exchanges are stamped into the scrollback, only the live panels update.
 
 ## Install
 
@@ -26,68 +29,119 @@ Run the setup wizard once:
 mirror config init
 ```
 
-## Quick start
+## Quick Start
 
 ```bash
+# Default command is chat
+mirror
+
 # Interactive chat
 mirror chat
 
 # One-shot (exits after response)
 mirror mirror "Should I use microservices or a monolith for my startup?"
 
-# Crank up the pressure
-mirror chat --intensity aggressive
+# Increase adversarial pressure
+mirror --intensity aggressive
+
+# Run a specific persona lens
+mirror --persona security-auditor
+
+# Disable the judge synthesis pass
+mirror --no-judge
+
+# Load file context before a session
+mirror chat --file ./notes.md
+
+# Provide file context for a one-shot
+mirror mirror --file ./spec.md "Summarize risks"
+
+# Pipe stdin into the one-shot
+cat ./spec.md | mirror mirror "Summarize risks"
 ```
 
-## Adversarial intensity levels
+## How It Works
 
-| Level | Style | What the challenger does |
+Adversarial Mirror classifies each prompt and decides whether to mirror or answer directly.
+
+- **Direct mode**: one model answers normally.
+- **Mirror mode**: original + challenger answer in parallel.
+- **Judge mode** (optional): a third model scores agreement and produces a synthesis + blind spot.
+
+## Intensity Levels
+
+| Level | Challenger style | What it does |
 |---|---|---|
-| `mild` | Gentle critic | Full answer + 1-2 genuine gaps + steelman |
-| `moderate` | Devil's advocate | Reframe → challenge the frame → hidden costs → strongest counterposition → verdict |
-| `aggressive` | Full adversarial | Buried assumption → strongest refutation → failure cases → expert dissent → synthesis |
+| `mild` | Gentle critic | Full answer + 1�2 real gaps + steelman |
+| `moderate` | Devil's advocate | Reframe ? challenge the frame ? hidden costs ? strongest counterposition ? verdict |
+| `aggressive` | Full adversarial | Buried assumption ? strongest refutation ? failure cases ? expert dissent ? honest synthesis |
 
-All levels enforce: *"Every point must have a specific mechanism. Vague doubt is useless."*
+All levels enforce: �Every point must have a specific mechanism. Vague doubt is useless.�
+
+## Persona Lenses
+
+Personas give the challenger a professional lens:
+
+| Persona | Lens |
+|---|---|
+| `vc-skeptic` | Investor scrutiny and defensibility |
+| `security-auditor` | Attack surfaces and failure modes |
+| `end-user` | Adoption friction and real-world behavior |
+| `regulator` | Compliance exposure and liability |
+| `contrarian` | Pure opposition and inverted premise |
+
+Use a persona with `--persona <name>` or set a default in config.
+
+## Judge Synthesis
+
+The judge pass is enabled by default. It produces:
+- An agreement score (0�100%).
+- A synthesis verdict that weighs both answers.
+- A blind spot section that names what both missed.
+
+Flags:
+- `--no-judge` disables the judge.
+- `--judge-brain <id>` selects a specific brain for judging.
 
 ## Commands
 
 ```
-mirror chat                        Interactive session (default)
-mirror mirror "<question>"         One-shot query, exits after response
-mirror config init                 Interactive setup wizard
-mirror config show                 Show current config (keys are visible)
-mirror config set <key> <value>    Set a config value by dot-path
-mirror brains list                 List configured AI brains
-mirror brains test <id>            Ping a brain to verify connection
-mirror brains add                  Add a new brain interactively
-mirror history list                List past sessions
-mirror history show <id>           Show a past session as JSON
-mirror history export <id> <file>  Export session to a JSON file
+mirror                                   Default to chat
+mirror chat                              Interactive session
+mirror mirror "<question>"               One-shot query
+mirror config init                       Interactive setup wizard
+mirror config show                       Show current config
+mirror config set <key> <value>          Set a config value by dot-path
+mirror brains list                       List configured brains
+mirror brains test <id>                  Ping a brain to verify connection
+mirror brains add                        Add a new brain interactively
+mirror history list                      List past sessions
+mirror history show <id>                 Show a past session as JSON
+mirror history export <id> <file>        Export session to a JSON file
 
 Global flags:
   --intensity mild|moderate|aggressive
   --original <brain-id>
   --challenger <brain-id>
-  --no-mirror         Disable mirroring (single brain mode)
-  --no-classify       Skip intent classification, always mirror
-  --debug             Enable verbose debug output
+  --no-mirror
+  --no-classify
+  --no-judge
+  --judge-brain <brain-id>
+  --persona <name>
+  --debug
 ```
 
 ## Configuration
 
-Config is stored at:
-- **macOS/Linux:** `~/.config/adversarial-mirror/config.json`
-- **Windows:** `%APPDATA%\adversarial-mirror\config.json`
+Config location:
+- macOS/Linux: `~/.config/adversarial-mirror/config.json`
+- Windows: `%APPDATA%\adversarial-mirror\config.json`
 
-API keys are read from environment variables:
+`mirror config init` can prompt for API keys and optionally persist them.
+- Windows uses `setx`.
+- Non-Windows will prompt you to export in your shell profile.
 
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=sk-...
-export GOOGLE_API_KEY=AIza...
-```
-
-## Supported providers
+## Supported Providers
 
 | Provider | Example models | Env var |
 |---|---|---|
@@ -95,21 +149,13 @@ export GOOGLE_API_KEY=AIza...
 | OpenAI | `gpt-4o`, `o3-mini`, `o3` | `OPENAI_API_KEY` |
 | Google | `gemini-2.5-pro`, `gemini-1.5-pro` | `GOOGLE_API_KEY` |
 
-**Tip:** `o3-mini` is the recommended challenger brain if you have OpenAI access. Its step-by-step reasoning produces sharper adversarial analysis than `gpt-4o`. To switch:
+Mix and match providers for original, challenger, and judge.
 
-```bash
-mirror config set session.challengerBrainId o3-mini
-```
+## Terminal UI
 
-Mix and match — the original and challenger can use different providers.
-
-## How the terminal UI works
-
-Completed exchanges are rendered **once** and stamped permanently into the terminal's scroll buffer (using Ink's `Static` component). Only the currently-streaming panels update. This means:
-
-- History never flickers or redraws on resize
-- You can scroll up to read previous exchanges at any time
-- The dynamic area stays small: just the live streaming panels + input
+- The header and completed exchanges are rendered via Ink�s `Static`, so they never redraw or flicker.
+- Only the live streaming panels update during a request.
+- Streaming output is trimmed to recent lines to keep the dynamic area stable.
 
 ## Development
 
@@ -127,23 +173,24 @@ Run tests without real API keys:
 MOCK_BRAINS=true npm test
 ```
 
+Coverage:
+
+```bash
+npm run test:coverage
+```
+
 Watch mode:
 
 ```bash
 npm run dev
 ```
 
-## Building standalone binaries
+## Building Standalone Binaries
 
 ```bash
 npm run build
 npm run package
-# outputs: dist/pkg/mirror-linux-x64, mirror-macos-arm64, mirror-win-x64.exe, etc.
 ```
-
-## CI
-
-Every push runs the full test suite on Ubuntu, macOS, and Windows across Node.js 20 and 22. Tagged releases automatically publish to npm and attach pre-built binaries to the GitHub Release.
 
 ## License
 
