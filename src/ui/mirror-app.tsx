@@ -216,7 +216,7 @@ function tailLines(text: string, maxLines: number): string {
 
 function formatTokens(input?: number, output?: number): string | null {
   if (input === undefined && output === undefined) return null
-  return `${input ?? 0}/${output ?? 0}tok`
+  return `${input ?? 0}in ${output ?? 0}out`
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
