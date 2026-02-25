@@ -1,20 +1,12 @@
-<pre>
-<span style="color:#00D2FF"> ________                             _____ ______   ___  ________  ________  ________  ________     </span>
-<span style="color:#3A7BD5">|\   __  \                           |\   _ \  _   \|\  \|\   __  \|\   __  \|\   __  \|\   __  \    </span>
-<span style="color:#7F5AF0">\ \  \|\  \        ____________      \ \  \\\__\ \  \ \  \ \  \|\  \ \  \|\  \ \  \|\  \ \  \|\  \   </span>
-<span style="color:#FF6EC7"> \ \   __  \      |\____________\     \ \  \\|__| \  \ \  \ \   _  _\ \   _  _\ \  \\\  \ \   _  _\  </span>
-<span style="color:#FFB86C">  \ \  \ \  \     \|____________|      \ \  \    \ \  \ \  \ \  \\  \\ \  \\  \\ \  \\\  \ \  \\  \| </span>
-<span style="color:#3A7BD5">   \ \__\ \__\                          \ \__\    \ \__\ \__\ \__\\ _\\ \__\\ _\\ \_______\ \__\\ _\ </span>
-<span style="color:#00D2FF">    \|__|\|__|                           \|__|     \|__|\|__|\|__|\|__|\|__|\|__|\|_______|\|__|\|__|</span>
-</pre>
+![A-MIRROR](./header.svg)
 
 <div align="center">
 
-**A terminal-first adversarial AI layer that forks every prompt to two models in parallel,<br>forces a challenger to find flaws, and synthesizes the verdict in real time.**
+**Terminal-first adversarial AI middleware. Classifies each prompt, routes open-ended questions<br>to two models in parallel, and synthesizes a verdict — all in real time.**
 
 ![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
-![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-122%20passing-brightgreen?style=flat-square)
 
 </div>
 
@@ -22,26 +14,37 @@
 
 ## The problem it solves
 
-Every AI gives you the answer it thinks you want to hear. Adversarial Mirror sits between you and your models and **forces a second model to challenge the first one**. Not to be contrary for the sake of it — to surface the assumptions you didn't know you were making, the risks you didn't ask about, and the alternatives you didn't consider.
+Every AI gives you the answer it thinks you want to hear. Adversarial Mirror sits between you and your models and routes the right prompts to a second model whose only job is to challenge the first one — not to be contrary, but to surface the assumptions you didn't know you were making, the risks you didn't ask about, and the alternatives you didn't consider.
+
+Not every prompt benefits from adversarial pressure. Factual lookups, math, and code have correct answers — mirroring them wastes tokens and adds noise. Adversarial Mirror classifies each prompt first and only applies the challenger where it actually helps.
 
 ```
   Your prompt
       │
       ▼
-  ┌───────────────┐
-  │  Classifier   │  ← Is this a question with a correct answer?
-  └───────────────┘         (factual / math / code → direct mode)
-      │
-  ┌───┴───┐
-  ▼       ▼
-Original  Challenger   ← streams both in parallel
-  │             │
-  └──────┬──────┘
-         ▼
-       Judge          ← agreement score + synthesis + blind spot
+  ┌──────────────────────────────────────────────────────┐
+  │  Intent Classifier                                   │
+  │                                                      │
+  │  factual · math · code · conversational              │
+  │    └─► direct mode  (original only, no challenger)   │
+  │                                                      │
+  │  opinion · analysis · strategy · prediction          │
+  │    └─► mirror mode  (original + challenger)          │
+  └──────────────────────────────────────────────────────┘
+                          │
+                          │ mirror mode
+                          ▼
+              ┌───────────────────────┐
+              │  Original + Challenger│  both stream in parallel
+              └───────────────────────┘
+                          │
+                          ▼
+                      ┌───────┐
+                      │ Judge │  agreement score · synthesis · blind spot
+                      └───────┘  on by default — skip with --no-judge
 ```
 
-The output is a living terminal session. Completed exchanges stamp themselves permanently into the scrollback. Only the live panels update while models are streaming.
+The output is a persistent terminal session. Each completed exchange stamps itself permanently into the scrollback. Only the live streaming panels update while models are running.
 
 ---
 
@@ -60,44 +63,44 @@ npm install && npm run build
 npm link
 ```
 
-Then run the one-time setup wizard:
+Run the one-time setup wizard:
 
 ```bash
 mirror config init
 ```
 
-This walks you through API keys, default brains, intensity, and judge settings. Keys are persisted to environment variables (`setx` on Windows, shell profile export on Unix).
+This walks you through API keys, default brains, intensity, judge, and persona settings. Keys are persisted to environment variables (`setx` on Windows, shell profile export on Unix).
 
 ---
 
 ## Quick start
 
 ```bash
-# Open an interactive session (default command)
+# Interactive session (default when no subcommand is given)
 mirror
 
-# One-shot query — prints and exits
+# One-shot query — streams and exits
 mirror mirror "Should I rewrite this in Rust?"
 
-# Turn up the pressure
+# Increase adversarial pressure
 mirror --intensity aggressive
 
-# Apply a professional lens
+# Apply a professional lens to the challenger
 mirror --persona security-auditor
 
-# Load a document as context before you start typing
+# Disable the judge synthesis pass
+mirror --no-judge
+
+# Load a file as context before the session starts
 mirror chat --file ./architecture.md
 
-# One-shot with a file
+# One-shot with file context
 mirror mirror --file ./spec.md "What are the risks?"
 
 # Pipe anything in
 cat proposal.md | mirror mirror "Challenge every assumption"
 
-# Disable the judge to go faster
-mirror --no-judge
-
-# Use different models than your defaults
+# Override which brains are used for this run
 mirror --original claude-sonnet-4-6 --challenger o3-mini --judge-brain claude-opus-4-6
 ```
 
@@ -107,47 +110,48 @@ mirror --original claude-sonnet-4-6 --challenger o3-mini --judge-brain claude-op
 
 ### Intent classification
 
-Before routing a prompt, the engine classifies it. Questions with objectively correct answers (facts, math, code) go to the original model alone — mirroring them wastes tokens and adds noise. Open-ended prompts (opinion, analysis, prediction, strategy) get the full adversarial treatment.
+Before routing, the engine classifies the prompt to decide whether adversarial pressure will actually add value.
 
-| Category | Example | Routed to |
+| Category | Routed to | Example |
 |---|---|---|
-| `factual_lookup` | "What year was Redis released?" | Direct |
-| `math_computation` | "What is 17% of 4200?" | Direct |
-| `code_task` | "Write a binary search in Go" | Direct |
-| `opinion_advice` | "Should I use microservices?" | Mirror |
-| `analysis` | "What are the risks of this architecture?" | Mirror |
-| `prediction` | "Will this approach scale to 10M users?" | Mirror |
-| `interpretation` | "What does this contract clause mean?" | Mirror |
+| `factual_lookup` | Direct | "What year was Redis released?" |
+| `math_computation` | Direct | "What is 17% of 4200?" |
+| `code_task` | Direct | "Write a binary search in Go" |
+| `conversational` | Direct | "Thanks, that helps" |
+| `opinion_advice` | Mirror | "Should I use microservices?" |
+| `analysis` | Mirror | "What are the risks of this approach?" |
+| `prediction` | Mirror | "Will this scale to 10M users?" |
+| `interpretation` | Mirror | "What does this contract clause mean?" |
 
-Classification uses a small fast model (Claude Haiku by default) with a confidence threshold. Prompts below threshold default to mirroring. Disable with `--no-classify` to always mirror.
+Classification uses a small fast model (Claude Haiku by default) with a configurable confidence threshold. Prompts below threshold default to mirroring. Disable classification entirely with `--no-classify` to always mirror.
 
 ---
 
 ### Intensity levels
 
-Controls how hard the challenger pushes back.
+Controls how aggressively the challenger pushes back.
 
 | Level | Style | Structure |
 |---|---|---|
-| `mild` | Gentle critic | Complete answer + 1-2 real gaps + steelman alternative |
+| `mild` | Gentle critic | Full answer + 1-2 real gaps + steelman alternative |
 | `moderate` | Devil's advocate | Reframe / challenge the frame / hidden costs / strongest counterposition / verdict |
 | `aggressive` | Full adversarial | Buried assumption / strongest refutation / failure cases / expert dissent / honest synthesis |
 
 All levels enforce one rule: **every point must have a specific mechanism. Vague doubt is useless.**
 
 ```bash
-mirror --intensity mild      # good for quick sanity checks
-mirror --intensity moderate  # default — the sweet spot
-mirror --intensity aggressive # use when the stakes are high
+mirror --intensity mild        # quick sanity check
+mirror --intensity moderate    # default — the sweet spot
+mirror --intensity aggressive  # when the stakes are high
 ```
 
 ---
 
 ### Persona lenses
 
-Personas give the challenger a professional frame of reference. Instead of generic adversarialism, you get a specific expert's skepticism applied to your prompt.
+Personas give the challenger a professional frame of reference. Instead of generic adversarialism, you get a domain expert's specific skepticism applied to your prompt. Personas stack on top of whatever intensity level is set.
 
-| Persona | Lens | Focus |
+| Persona | Lens | Focus areas |
 |---|---|---|
 | `vc-skeptic` | Investor | Market size assumptions, unit economics, moat, defensibility |
 | `security-auditor` | Security & risk | Attack surfaces, trust boundaries, failure modes, blast radius |
@@ -155,15 +159,15 @@ Personas give the challenger a professional frame of reference. Instead of gener
 | `regulator` | Compliance & legal | Regulatory exposure, liability, stakeholder harm, unintended consequences |
 | `contrarian` | Pure opposition | Historical failures, second-order effects, inverted premises, consensus traps |
 
-Personas compose with intensity levels — you get 15 distinct challenger modes total:
+Personas and intensities are independent — you get 15 distinct challenger modes in total:
 
 ```bash
-mirror --persona vc-skeptic --intensity aggressive   # full venture-style destruction
-mirror --persona security-auditor                    # defaults to moderate intensity
-mirror --persona regulator --file ./terms.md chat    # load a doc first, then go
+mirror --persona vc-skeptic --intensity aggressive
+mirror --persona security-auditor                    # defaults to moderate
+mirror --persona regulator --file ./terms.md chat
 ```
 
-Set a default persona so you never have to type it:
+Set a default so you never have to type it:
 
 ```bash
 mirror config set session.defaultPersona vc-skeptic
@@ -182,14 +186,14 @@ Both models agree on the technical approach but diverge sharply on timeline and 
 SYNTHESIS
 The monolith wins short-term. The challenger's concern about coupling is real but premature
 at your current scale. Revisit at 50k DAU. The original underestimates the ops cost of
-distributed tracing; budget 2 sprints for observability before you ship anything.
+distributed tracing — budget 2 sprints for observability before you ship anything.
 
 BLIND SPOT
 Neither model addressed the team's existing expertise. The "right" architecture is the one
 your engineers can actually debug at 3am.
 ```
 
-The agreement score (0-100%) gives you a quick read on how contested the territory is:
+The agreement score gives you a quick read on how contested the territory is:
 
 | Score | Meaning |
 |---|---|
@@ -200,8 +204,8 @@ The agreement score (0-100%) gives you a quick read on how contested the territo
 | 0-29% | Fundamentally opposed — the question is genuinely hard |
 
 ```bash
-mirror --no-judge         # skip synthesis, go faster
-mirror --judge-brain claude-opus-4-6   # use a heavier model for synthesis
+mirror --no-judge                          # skip synthesis, go faster
+mirror --judge-brain claude-opus-4-6       # use a heavier model for synthesis
 mirror config set session.judgeBrainId o3-mini
 ```
 
@@ -209,10 +213,10 @@ mirror config set session.judgeBrainId o3-mini
 
 ### File and pipe input
 
-Load any document as context before a session or one-shot query.
+Feed any document as context before a question.
 
 ```bash
-# Interactive session with a document preloaded
+# Interactive session with a file preloaded as context
 mirror chat --file ./notes.md
 mirror chat --file ./architecture.md
 
@@ -222,7 +226,7 @@ mirror mirror --file ./codebase-summary.md "Where are the security risks?"
 
 # Pipe from stdin
 cat ./spec.md | mirror mirror "What are the weakest assumptions here?"
-git diff HEAD~1 | mirror mirror "Review this diff"
+git diff HEAD~1 | mirror mirror "Review this diff for correctness and safety"
 curl -s https://api.example.com/openapi.json | mirror mirror "What could go wrong with this API design?"
 ```
 
@@ -234,7 +238,8 @@ curl -s https://api.example.com/openapi.json | mirror mirror "What could go wron
 mirror                                   Open interactive chat (default)
 mirror chat                              Interactive multi-turn session
 mirror chat --file <path>                Preload a file as conversation context
-mirror mirror "<question>"               One-shot query, print and exit
+
+mirror mirror "<question>"               One-shot query, stream and exit
 mirror mirror --file <path> "<question>" One-shot with file context
 
 mirror config init                       Interactive setup wizard
@@ -254,17 +259,17 @@ mirror history export <id> <file>        Export a session to a file
 
 ## Global flags
 
-These apply to every command and can be combined freely:
+All flags apply to any command and can be freely combined:
 
 ```
---intensity mild|moderate|aggressive   Adversarial pressure level (default: moderate)
+--intensity mild|moderate|aggressive   Adversarial pressure level  (default: moderate)
 --original <brain-id>                  Override the original brain
 --challenger <brain-id>                Override the challenger brain
 --judge-brain <brain-id>               Override the judge brain
---persona <name>                       Apply a persona lens to the challenger
---no-mirror                            Disable mirroring, answer directly
---no-classify                          Skip intent classification, always mirror
---no-judge                             Disable judge synthesis pass
+--persona <name>                       Apply a professional lens to the challenger
+--no-mirror                            Disable mirroring — original brain only
+--no-classify                          Skip classification, always mirror
+--no-judge                             Skip the judge synthesis pass
 --debug                                Print debug info to stderr
 ```
 
@@ -276,19 +281,21 @@ Config is stored at:
 - **macOS / Linux:** `~/.config/adversarial-mirror/config.json`
 - **Windows:** `%APPDATA%\adversarial-mirror\config.json`
 
-Run `mirror config init` to set everything up interactively. You can also set individual values:
+`mirror config init` sets everything up interactively. Set individual values with:
 
 ```bash
 mirror config set session.defaultIntensity aggressive
 mirror config set session.defaultPersona security-auditor
+mirror config set session.originalBrainId claude-sonnet-4-6
 mirror config set session.challengerBrainId o3-mini
 mirror config set session.judgeEnabled false
+mirror config set session.judgeBrainId claude-opus-4-6
 mirror config set ui.showTokenCounts true
 mirror config set ui.showLatency true
 mirror config set ui.syntaxHighlighting true
 ```
 
-View the full current config at any time:
+View the full config at any time:
 
 ```bash
 mirror config show
@@ -300,13 +307,13 @@ mirror config show
 
 Mix and match any provider for original, challenger, and judge independently.
 
-| Provider | Models | Env var |
+| Provider | Example models | Env var |
 |---|---|---|
 | **Anthropic** | `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
 | **OpenAI** | `gpt-4o`, `o3-mini`, `o3` | `OPENAI_API_KEY` |
 | **Google** | `gemini-2.5-pro`, `gemini-1.5-pro` | `GOOGLE_API_KEY` |
 
-Add a brain with `mirror brains add` or edit the config JSON directly. Each brain entry looks like:
+Add a brain with `mirror brains add` or add it directly to the config:
 
 ```json
 {
@@ -317,13 +324,13 @@ Add a brain with `mirror brains add` or edit the config JSON directly. Each brai
 }
 ```
 
-A few combinations worth calling out:
+A few combinations worth trying:
 
 ```bash
-# Heavyweight adversarial setup
+# Heavyweight — best quality, slower
 mirror --original claude-opus-4-6 --challenger o3 --judge-brain claude-opus-4-6
 
-# Fast and cheap
+# Fast and lean — no judge pass
 mirror --original claude-sonnet-4-6 --challenger o3-mini --no-judge
 
 # Cross-company sanity check
@@ -334,18 +341,19 @@ mirror --original claude-sonnet-4-6 --challenger gemini-2.5-pro
 
 ## Terminal UI
 
-The interface is built with [Ink](https://github.com/vadimdemedes/ink) (React for the terminal).
+The interface is built with [Ink](https://github.com/vadimdemedes/ink) (React for terminals).
 
-- **Completed exchanges** are written permanently to the scrollback via Ink's `Static` — they never redraw or flicker, even when models are streaming
-- **Live panels** update as tokens arrive, batched at 60ms to stay smooth
+- **Completed exchanges** are stamped permanently to the scrollback via Ink's `Static` — they never flicker or redraw, even while the next query is streaming
+- **Live panels** update as tokens arrive, batched at 60ms
 - **Side-by-side layout** activates automatically at terminal widths >= 80 columns
+- **Synthesis panel** appears below both brain panels with a yellow border when the judge is running
 - **Syntax highlighting** in code blocks
-- **Agreement score** in the judge panel header
-- Token counts and latency visible via `mirror config set ui.showTokenCounts true`
+- **Agreement score** shown in the synthesis panel header and status bar
+- Token counts and latency visible with `mirror config set ui.showTokenCounts true`
 
 ```
-Ctrl+C while idle    → exit
-Ctrl+C while thinking → cancel current request
+Ctrl+C while idle       → exit
+Ctrl+C while streaming  → cancel current request
 ```
 
 ---
@@ -359,26 +367,27 @@ npm install
 
 npm run build          # compile to dist/
 npm run dev            # watch mode
-npm test               # run test suite (122 tests)
+npm test               # 122 tests across 9 suites
 npm run test:coverage  # coverage report
 npm run test:watch     # vitest watch mode
 ```
 
-Run without real API keys using the mock adapter:
+Run without real API keys using the built-in mock adapter:
 
 ```bash
 MOCK_BRAINS=true node dist/cli.js chat
 MOCK_BRAINS=true node dist/cli.js --persona vc-skeptic mirror "my startup idea"
 MOCK_BRAINS=true node dist/cli.js mirror --file README.md "What are the risks?"
 echo "test input" | MOCK_BRAINS=true node dist/cli.js mirror "analyze this"
+MOCK_BRAINS=true node dist/cli.js --no-judge --intensity aggressive chat
 ```
 
-Build standalone binaries (requires `@yao-pkg/pkg`):
+Build standalone binaries (no Node.js required to run):
 
 ```bash
-npm run build
-npm run package
-# outputs to dist/pkg/ for win-x64, linux-x64, linux-arm64, macos-x64, macos-arm64
+npm run build && npm run package
+# outputs to dist/pkg/ for:
+#   win-x64 · linux-x64 · linux-arm64 · macos-x64 · macos-arm64
 ```
 
 ---

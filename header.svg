@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 154" width="100%">
+  <defs>
+
+    <!-- Flowing gradient: each stop is phase-shifted so colors sweep left → right -->
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%">
+        <animate attributeName="stop-color"
+          values="#00D2FF;#3A7BD5;#7F5AF0;#FF6EC7;#FFB86C;#00D2FF"
+          dur="5s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="25%">
+        <animate attributeName="stop-color"
+          values="#00D2FF;#3A7BD5;#7F5AF0;#FF6EC7;#FFB86C;#00D2FF"
+          dur="5s" begin="-1s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="50%">
+        <animate attributeName="stop-color"
+          values="#00D2FF;#3A7BD5;#7F5AF0;#FF6EC7;#FFB86C;#00D2FF"
+          dur="5s" begin="-2s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="75%">
+        <animate attributeName="stop-color"
+          values="#00D2FF;#3A7BD5;#7F5AF0;#FF6EC7;#FFB86C;#00D2FF"
+          dur="5s" begin="-3s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="100%">
+        <animate attributeName="stop-color"
+          values="#00D2FF;#3A7BD5;#7F5AF0;#FF6EC7;#FFB86C;#00D2FF"
+          dur="5s" begin="-4s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+
+    <!-- Scanline texture -->
+    <pattern id="scan" width="1" height="3" patternUnits="userSpaceOnUse">
+      <rect width="1" height="1" y="1" fill="rgba(0,0,0,0.10)"/>
+    </pattern>
+
+    <!-- Neon glow on the ASCII art -->
+    <filter id="glow" x="-4%" y="-25%" width="108%" height="150%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+  </defs>
+
+  <!-- Terminal window background -->
+  <rect width="640" height="154" fill="#0c0c0c" rx="10"/>
+
+  <!-- Scanline overlay -->
+  <rect width="640" height="154" fill="url(#scan)" rx="10"/>
+
+  <!-- Title bar -->
+  <rect width="640" height="27" fill="#181818" rx="10"/>
+  <rect y="17" width="640" height="10" fill="#181818"/>
+
+  <!-- macOS traffic lights -->
+  <circle cx="20" cy="13.5" r="5" fill="#ff5f57"/>
+  <circle cx="37" cy="13.5" r="5" fill="#ffbd2e"/>
+  <circle cx="54" cy="13.5" r="5" fill="#28c840"/>
+
+  <!-- Window title -->
+  <text x="320" y="18.5" text-anchor="middle"
+    font-family="monospace" font-size="10" fill="#4a4a4a" letter-spacing="1">adversarial-mirror</text>
+
+  <!-- Thin neon border -->
+  <rect width="640" height="154" fill="none" stroke="#00D2FF"
+    stroke-width="0.6" opacity="0.20" rx="10"/>
+
+  <!-- ASCII art with animated gradient + glow -->
+  <text font-family="'Courier New', Courier, monospace" font-size="9.5"
+    fill="url(#g)" filter="url(#glow)" xml:space="preserve">
+    <tspan x="10" y="47"> ________                             _____ ______   ___  ________  ________  ________  ________</tspan>
+    <tspan x="10" dy="14">|\   __  \                           |\   _ \  _   \|\  \|\   __  \|\   __  \|\   __  \|\   __  \</tspan>
+    <tspan x="10" dy="14">\ \  \|\  \        ____________      \ \  \\\__\ \  \ \  \ \  \|\  \ \  \|\  \ \  \|\  \ \  \|\  \</tspan>
+    <tspan x="10" dy="14"> \ \   __  \      |\____________\     \ \  \\|__| \  \ \  \ \   _  _\ \   _  _\ \  \\\  \ \   _  _\</tspan>
+    <tspan x="10" dy="14">  \ \  \ \  \     \|____________|      \ \  \    \ \  \ \  \ \  \\  \\ \  \\  \\ \  \\\  \ \  \\  \|</tspan>
+    <tspan x="10" dy="14">   \ \__\ \__\                          \ \__\    \ \__\ \__\ \__\\ _\\ \__\\ _\\ \_______\ \__\\ _\</tspan>
+    <tspan x="10" dy="14">    \|__|\|__|                           \|__|     \|__|\|__|\|__|\|__|\|__|\|__|\|_______|\|__|\|__|</tspan>
+  </text>
+
+  <!-- Subtitle -->
+  <text x="320" y="145" text-anchor="middle"
+    font-family="'Courier New', Courier, monospace"
+    font-size="9" fill="#383838" letter-spacing="5.5">ADVERSARIAL AI LAYER</text>
+
+</svg>
