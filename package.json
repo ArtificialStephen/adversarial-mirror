@@ -1,7 +1,29 @@
 {
   "name": "adversarial-mirror",
   "version": "0.1.0",
-  "description": "CLI middleware that mirrors user prompts to an original and adversarial challenger model.",
+  "description": "Terminal-first adversarial AI middleware. Routes open-ended prompts to two models in parallel, forces a challenger to surface blind spots, and synthesizes a verdict.",
+  "author": "Stephen Marullo",
+  "license": "MIT",
+  "homepage": "https://github.com/StephenMarullo/adversarial-mirror#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/StephenMarullo/adversarial-mirror.git"
+  },
+  "bugs": {
+    "url": "https://github.com/StephenMarullo/adversarial-mirror/issues"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "cli",
+    "adversarial",
+    "challenger",
+    "anthropic",
+    "openai",
+    "gemini",
+    "terminal",
+    "sycophancy"
+  ],
   "type": "module",
   "bin": {
     "mirror": "dist/cli.js"

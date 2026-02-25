@@ -9,7 +9,7 @@ if (!tag) {
 
 const token = process.env.GITHUB_TOKEN
 if (!token) {
-  console.error('GITHUB_TOKEN is required for private release assets.')
+  console.error('GITHUB_TOKEN is required to fetch release assets from the GitHub API.')
   process.exit(1)
 }
 
