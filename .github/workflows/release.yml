@@ -109,8 +109,6 @@ jobs:
         run: npx @yao-pkg/pkg dist/cli.js --target ${{ matrix.target }} --output dist/pkg/${{ matrix.output }}
 
       - name: Attach to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/pkg/${{ matrix.output }}
+        run: gh release upload ${{ github.ref_name }} dist/pkg/${{ matrix.output }} --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
