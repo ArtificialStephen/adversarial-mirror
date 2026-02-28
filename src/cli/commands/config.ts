@@ -1,9 +1,11 @@
 import { execFile } from 'node:child_process'
+import { appendFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import { promisify } from 'node:util'
 import { loadConfig, saveConfig, setConfigValue } from '../../config/loader.js'
 import type { AppConfig } from '../../config/schema.js'
+import { buildExportLines, detectShellProfile } from '../utils/shell.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -132,7 +134,7 @@ export async function runConfigInit(): Promise<void> {
         true
       )
       if (persist) {
-        await persistEnvVars(updatedKeys)
+        await persistEnvVars(updatedKeys, rl)
         process.stdout.write(
           'Keys saved. Open a new terminal session to pick them up.\n'
         )
@@ -321,7 +323,10 @@ async function askSecret(
   })
 }
 
-async function persistEnvVars(vars: Record<string, string>): Promise<void> {
+async function persistEnvVars(
+  vars: Record<string, string>,
+  rl: ReturnType<typeof createInterface>
+): Promise<void> {
   if (process.platform === 'win32') {
     for (const [key, value] of Object.entries(vars)) {
       await execFileAsync('setx', [key, value])
@@ -329,9 +334,34 @@ async function persistEnvVars(vars: Record<string, string>): Promise<void> {
     return
   }
 
-  process.stdout.write(
-    'Non-Windows detected. Please export your keys in your shell profile.\n'
+  const profile = detectShellProfile()
+  const lines = buildExportLines(vars, profile)
+  const isFish = profile.endsWith('config.fish')
+
+  process.stdout.write(`\nDetected shell profile: ${profile}\n`)
+  process.stdout.write('Add the following to your shell profile:\n\n')
+  for (const line of lines) {
+    process.stdout.write(`  ${line}\n`)
+  }
+  process.stdout.write('\n')
+
+  if (isFish) {
+    process.stdout.write(
+      'Fish tip: run those commands directly in your terminal — `set -Ux` persists automatically across sessions.\n'
+    )
+    return
+  }
+
+  const write = await askYesNo(
+    rl,
+    `Append these lines to ${profile} automatically? (y/n) [y]: `,
+    true
   )
+  if (write) {
+    const content = '\n# adversarial-mirror API keys\n' + lines.join('\n') + '\n'
+    appendFileSync(profile, content, 'utf8')
+    process.stdout.write(`Appended to ${profile}.\n`)
+  }
 }
 
 async function validateGeminiModels(
