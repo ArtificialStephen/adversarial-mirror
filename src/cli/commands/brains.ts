@@ -3,6 +3,7 @@ import { stdin as input, stdout as output } from 'node:process'
 import { createAdapter } from '../../brains/factory.js'
 import { loadConfig, saveConfig } from '../../config/loader.js'
 import type { BrainConfig } from '../../config/schema.js'
+import { resolveOAuthTokens } from '../utils/resolve-tokens.js'
 
 export function runBrainsList(): void {
   const config = loadConfig()
@@ -11,8 +12,13 @@ export function runBrainsList(): void {
     return
   }
 
-  const rows = config.brains.map(b => [b.id, b.provider, b.model, b.apiKeyEnvVar ?? '—'])
-  const headers = ['ID', 'PROVIDER', 'MODEL', 'API_KEY_ENV']
+  const rows = config.brains.map(b => [
+    b.id,
+    b.provider,
+    b.model,
+    b.authType === 'oauth' ? 'oauth' : (b.apiKeyEnvVar ?? '—'),
+  ])
+  const headers = ['ID', 'PROVIDER', 'MODEL', 'AUTH']
   const all = [headers, ...rows]
   const widths = headers.map((_, i) => Math.max(...all.map(r => r[i].length)))
   const fmt = (row: string[]) => row.map((cell, i) => cell.padEnd(widths[i])).join('  ')
@@ -32,7 +38,8 @@ export async function runBrainsTest(id: string): Promise<void> {
       throw new Error(`Brain not found: ${id}`)
     }
 
-    const adapter = createAdapter(brain)
+    const oauthTokens = await resolveOAuthTokens(config.brains)
+    const adapter = createAdapter(brain, {}, oauthTokens)
     const result = await adapter.ping()
     if (!result.ok) {
       throw new Error(result.error ?? 'Ping failed')
@@ -69,19 +76,36 @@ export async function runBrainsAdd(): Promise<void> {
 
     const model = await askRequired(rl, 'Model name: ')
 
+    let authType: BrainConfig['authType'] = 'key'
     let apiKeyEnvVar: string | undefined
-    if (provider !== 'ollama' && provider !== 'mock') {
+    let baseUrl: string | undefined
+
+    if (provider === 'openai' || provider === 'gemini') {
+      const authAnswer = await askOptional(
+        rl,
+        'Auth type (key|oauth) [key]: ',
+        'key'
+      )
+      authType = (authAnswer === 'oauth' ? 'oauth' : 'key') as BrainConfig['authType']
+    }
+
+    if (authType === 'key' && provider !== 'ollama' && provider !== 'mock') {
       const suggestedEnv = defaultEnvVar(provider)
       apiKeyEnvVar = await askRequired(rl, `API key env var (${suggestedEnv}): `, suggestedEnv)
     }
 
-    let baseUrl: string | undefined
+    if (authType === 'oauth') {
+      process.stdout.write(
+        `OAuth selected. Run 'mirror auth login ${provider}' after adding this brain.\n`
+      )
+    }
+
     if (provider === 'ollama') {
       const ans = (await rl.question('Base URL [http://localhost:11434]: ')).trim()
       if (ans) baseUrl = ans
     }
 
-    const next: BrainConfig = { id, provider, model, apiKeyEnvVar, baseUrl }
+    const next: BrainConfig = { id, provider, model, authType, apiKeyEnvVar, baseUrl }
 
     saveConfig({ ...config, brains: [...config.brains, next] })
     process.stdout.write(`Added brain ${id}.\n`)
@@ -102,6 +126,15 @@ async function askRequired(
   if (answer) return answer
   if (fallback) return fallback
   return askRequired(rl, prompt, fallback)
+}
+
+async function askOptional(
+  rl: ReturnType<typeof createInterface>,
+  prompt: string,
+  fallback: string
+): Promise<string> {
+  const answer = (await rl.question(prompt)).trim()
+  return answer || fallback
 }
 
 function defaultEnvVar(provider: BrainConfig['provider']): string {

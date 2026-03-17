@@ -9,6 +9,7 @@ import { MirrorEngine } from '../../engine/mirror-engine.js'
 import { Session } from '../../engine/session.js'
 import { addHistoryEntry } from '../../history/store.js'
 import type { BrainResult, IntentResult } from '../../types/index.js'
+import { resolveOAuthTokens } from '../utils/resolve-tokens.js'
 
 function readStdin(): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -68,10 +69,13 @@ export async function runMirror(
     const originalConfig = config.brains.find(b => b.id === originalId)
     if (!originalConfig) throw new Error(`Original brain not found: ${originalId}`)
 
-    const originalAdapter = createAdapter(originalConfig)
+    // Resolve OAuth tokens for all relevant brains upfront
+    const oauthTokens = await resolveOAuthTokens(config.brains)
+
+    const originalAdapter = createAdapter(originalConfig, {}, oauthTokens)
     const challengerConfig = config.brains.find(b => b.id === challengerId)
     const challengerAdapter =
-      mirrorEnabled && challengerConfig ? createAdapter(challengerConfig) : undefined
+      mirrorEnabled && challengerConfig ? createAdapter(challengerConfig, {}, oauthTokens) : undefined
 
     // Build judge adapter
     let judgeAdapter = undefined
@@ -79,11 +83,11 @@ export async function runMirror(
       const judgeId = (opts['judgeBrain'] as string | undefined) ?? config.session.judgeBrainId
       const judgeConfig = config.brains.find(b => b.id === judgeId)
       if (judgeConfig) {
-        judgeAdapter = createAdapter(judgeConfig)
+        judgeAdapter = createAdapter(judgeConfig, {}, oauthTokens)
       }
     }
 
-    const classifier = buildIntentClassifier(config, Boolean(opts['debug']))
+    const classifier = buildIntentClassifier(config, Boolean(opts['debug']), oauthTokens)
     const engine = new MirrorEngine({
       original: originalAdapter,
       challenger: challengerAdapter,

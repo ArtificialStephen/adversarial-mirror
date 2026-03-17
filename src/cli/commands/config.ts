@@ -6,6 +6,9 @@ import { promisify } from 'node:util'
 import { loadConfig, saveConfig, setConfigValue } from '../../config/loader.js'
 import type { AppConfig } from '../../config/schema.js'
 import { buildExportLines, detectShellProfile } from '../utils/shell.js'
+import { hasTokens } from '../../auth/token-store.js'
+import { loginOpenAI } from '../../auth/openai-oauth.js'
+import { loginGemini } from '../../auth/gemini-oauth.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -23,22 +26,97 @@ export async function runConfigInit(): Promise<void> {
     if (config.brains.length === 0) {
       throw new Error('No brains configured. Run mirror brains add first.')
     }
+
+    const availableBrains = config.brains.map((brain) => brain.id).join(', ')
+
+    // ─── Session Settings ────────────────────────────────────────────────────
+    process.stdout.write('\n── Session ──────────────────────────────────\n')
+
+    const originalBrainId = await askRequired(
+      rl,
+      `Original brain (${availableBrains}) [${config.session.originalBrainId}]: `,
+      config.session.originalBrainId
+    )
+    if (!config.brains.some((brain) => brain.id === originalBrainId)) {
+      throw new Error(`Unknown brain id: ${originalBrainId}`)
+    }
+
+    const challengerBrainId = await askRequired(
+      rl,
+      `Challenger brain (${availableBrains}) [${config.session.challengerBrainId}]: `,
+      config.session.challengerBrainId
+    )
+    if (!config.brains.some((brain) => brain.id === challengerBrainId)) {
+      throw new Error(`Unknown brain id: ${challengerBrainId}`)
+    }
+
     const intensity = (await askRequired(
       rl,
       `Default intensity (mild|moderate|aggressive) [${config.session.defaultIntensity}]: `,
       config.session.defaultIntensity
     )) as AppConfig['session']['defaultIntensity']
-
     if (!['mild', 'moderate', 'aggressive'].includes(intensity)) {
       throw new Error(`Invalid intensity: ${intensity}`)
     }
+
+    const autoClassify = await askYesNo(
+      rl,
+      `Auto-classify intent? (y/n) [${config.session.autoClassify ? 'y' : 'n'}]: `,
+      config.session.autoClassify
+    )
+
+    const historyWindowSize = Number(
+      await askRequired(
+        rl,
+        `History window size [${config.session.historyWindowSize}]: `,
+        String(config.session.historyWindowSize)
+      )
+    )
+    if (!Number.isInteger(historyWindowSize) || historyWindowSize <= 0) {
+      throw new Error('History window size must be a positive integer.')
+    }
+
+    // ─── Judge Settings ───────────────────────────────────────────────────────
+    process.stdout.write('\n── Judge ────────────────────────────────────\n')
+
+    const judgeEnabled = await askYesNo(
+      rl,
+      `Enable synthesis judge? (y/n) [${config.session.judgeEnabled ? 'y' : 'n'}]: `,
+      config.session.judgeEnabled
+    )
+
+    let judgeBrainId = config.session.judgeBrainId
+    if (judgeEnabled) {
+      judgeBrainId = await askRequired(
+        rl,
+        `Judge brain (${availableBrains}) [${config.session.judgeBrainId}]: `,
+        config.session.judgeBrainId
+      )
+      if (!config.brains.some((brain) => brain.id === judgeBrainId)) {
+        throw new Error(`Unknown brain id: ${judgeBrainId}`)
+      }
+    }
+
+    // ─── Persona Settings ─────────────────────────────────────────────────────
+    process.stdout.write('\n── Persona ──────────────────────────────────\n')
+
+    const personaNames = 'vc-skeptic|security-auditor|end-user|regulator|contrarian'
+    const currentPersona = config.session.defaultPersona ?? 'none'
+    const personaAnswer = await askOptional(
+      rl,
+      `Default persona (${personaNames}|none) [${currentPersona}]: `,
+      currentPersona
+    )
+    const defaultPersona = (personaAnswer === 'none' || !personaAnswer) ? undefined : personaAnswer
+
+    // ─── Display Settings ─────────────────────────────────────────────────────
+    process.stdout.write('\n── Display ──────────────────────────────────\n')
 
     const layout = (await askRequired(
       rl,
       `Layout (side-by-side|stacked) [${config.ui.layout}]: `,
       config.ui.layout
     )) as AppConfig['ui']['layout']
-
     if (!['side-by-side', 'stacked'].includes(layout)) {
       throw new Error(`Invalid layout: ${layout}`)
     }
@@ -61,88 +139,56 @@ export async function runConfigInit(): Promise<void> {
       config.ui.syntaxHighlighting
     )
 
-    const autoClassify = await askYesNo(
-      rl,
-      `Auto-classify intent? (y/n) [${config.session.autoClassify ? 'y' : 'n'}]: `,
-      config.session.autoClassify
-    )
-
-    const historyWindowSize = Number(
-      await askRequired(
-        rl,
-        `History window size [${config.session.historyWindowSize}]: `,
-        String(config.session.historyWindowSize)
-      )
-    )
-
-    if (!Number.isInteger(historyWindowSize) || historyWindowSize <= 0) {
-      throw new Error('History window size must be a positive integer.')
-    }
-
-    const availableBrains = config.brains.map((brain) => brain.id).join(', ')
-    const originalBrainId = await askRequired(
-      rl,
-      `Original brain id (${availableBrains}) [${config.session.originalBrainId}]: `,
-      config.session.originalBrainId
-    )
-
-    const challengerBrainId = await askRequired(
-      rl,
-      `Challenger brain id (${availableBrains}) [${config.session.challengerBrainId}]: `,
-      config.session.challengerBrainId
-    )
-
-    if (!config.brains.some((brain) => brain.id === originalBrainId)) {
-      throw new Error(`Unknown original brain id: ${originalBrainId}`)
-    }
-    if (!config.brains.some((brain) => brain.id === challengerBrainId)) {
-      throw new Error(`Unknown challenger brain id: ${challengerBrainId}`)
-    }
-
-    const judgeEnabled = await askYesNo(
-      rl,
-      `Enable judge synthesis pass? (y/n) [${config.session.judgeEnabled ? 'y' : 'n'}]: `,
-      config.session.judgeEnabled
-    )
-
-    let judgeBrainId = config.session.judgeBrainId
-    if (judgeEnabled) {
-      judgeBrainId = await askRequired(
-        rl,
-        `Judge brain id (${availableBrains}) [${config.session.judgeBrainId}]: `,
-        config.session.judgeBrainId
-      )
-      if (!config.brains.some((brain) => brain.id === judgeBrainId)) {
-        throw new Error(`Unknown judge brain id: ${judgeBrainId}`)
-      }
-    }
-
-    const personaNames = 'vc-skeptic|security-auditor|end-user|regulator|contrarian'
-    const currentPersona = config.session.defaultPersona ?? 'none'
-    const personaAnswer = await askOptional(
-      rl,
-      `Default persona (${personaNames}|none) [${currentPersona}]: `,
-      currentPersona
-    )
-    const defaultPersona = (personaAnswer === 'none' || !personaAnswer) ? undefined : personaAnswer
-
-    const updatedKeys = await promptForApiKeys(rl, config)
-    if (Object.keys(updatedKeys).length > 0) {
-      const persist = await askYesNo(
-        rl,
-        'Persist API keys to environment variables? (y/n) [y]: ',
-        true
-      )
-      if (persist) {
-        await persistEnvVars(updatedKeys, rl)
-        process.stdout.write(
-          'Keys saved. Open a new terminal session to pick them up.\n'
+    // ─── API Keys ─────────────────────────────────────────────────────────────
+    const keyBrains = config.brains.filter(b => b.authType !== 'oauth')
+    if (keyBrains.length > 0) {
+      process.stdout.write('\n── API Keys ─────────────────────────────────\n')
+      const updatedKeys = await promptForApiKeys(rl, config)
+      if (Object.keys(updatedKeys).length > 0) {
+        const persist = await askYesNo(
+          rl,
+          'Persist API keys to environment variables? (y/n) [y]: ',
+          true
         )
+        if (persist) {
+          await persistEnvVars(updatedKeys, rl)
+          process.stdout.write(
+            'Keys saved. Open a new terminal session to pick them up.\n'
+          )
+        }
+      }
+      await validateGeminiModels(rl, config, updatedKeys)
+    }
+
+    // ─── OAuth Sessions ───────────────────────────────────────────────────────
+    const oauthBrains = config.brains.filter(
+      b => b.authType === 'oauth' && (b.provider === 'openai' || b.provider === 'gemini')
+    )
+    if (oauthBrains.length > 0) {
+      process.stdout.write('\n── OAuth Sessions ───────────────────────────\n')
+      for (const brain of oauthBrains) {
+        const provider = brain.provider as 'openai' | 'gemini'
+        const active = hasTokens(provider)
+        process.stdout.write(
+          `${brain.id} (${provider})  ${active ? '✓ logged in' : '✗ not logged in'}\n`
+        )
+        if (!active) {
+          const doLogin = await askYesNo(
+            rl,
+            `Log in to ${provider} now? (y/n) [y]: `,
+            true
+          )
+          if (doLogin) {
+            rl.close()
+            if (provider === 'openai') await loginOpenAI()
+            else await loginGemini()
+            return
+          }
+        }
       }
     }
 
-    await validateGeminiModels(rl, config, updatedKeys)
-
+    // ─── Save ─────────────────────────────────────────────────────────────────
     saveConfig({
       ...config,
       session: {
@@ -165,7 +211,7 @@ export async function runConfigInit(): Promise<void> {
       }
     })
 
-    process.stdout.write('Config saved.\n')
+    process.stdout.write('\nConfig saved.\n')
   } catch (error) {
     process.stderr.write(
       `Failed to initialize config: ${(error as Error).message}\n`
@@ -252,17 +298,16 @@ async function promptForApiKeys(
   config: AppConfig
 ): Promise<Record<string, string>> {
   const updated: Record<string, string> = {}
+  const keyBrains = config.brains.filter(b => b.authType !== 'oauth' && b.apiKeyEnvVar)
   const uniqueEnvVars = Array.from(
-    new Set(config.brains.map((brain) => brain.apiKeyEnvVar))
+    new Set(keyBrains.map((brain) => brain.apiKeyEnvVar as string))
   )
-
-  process.stdout.write('\nAPI key setup (stored in environment variables):\n')
 
   for (const envVar of uniqueEnvVars) {
     const alreadySet = Boolean(process.env[envVar])
     const shouldSet = await askYesNo(
       rl,
-      `${envVar} ${alreadySet ? '(already set)' : '(missing)'} - set now? (y/n) [${
+      `${envVar} ${alreadySet ? '(already set)' : '(missing)'} — set now? (y/n) [${
         alreadySet ? 'n' : 'y'
       }]: `,
       !alreadySet
@@ -369,12 +414,16 @@ async function validateGeminiModels(
   config: AppConfig,
   updatedKeys: Record<string, string>
 ): Promise<void> {
-  const geminiBrains = config.brains.filter((brain) => brain.provider === 'gemini')
+  // Only validate key-auth gemini brains
+  const geminiBrains = config.brains.filter(
+    (brain) => brain.provider === 'gemini' && brain.authType !== 'oauth'
+  )
   if (geminiBrains.length === 0) {
     return
   }
 
   const geminiEnvVar = geminiBrains[0].apiKeyEnvVar
+  if (!geminiEnvVar) return
   const apiKey = updatedKeys[geminiEnvVar] ?? process.env[geminiEnvVar]
   if (!apiKey) {
     return

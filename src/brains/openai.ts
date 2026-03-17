@@ -15,10 +15,10 @@ export class OpenAIAdapter implements BrainAdapter {
   private readonly model: string
   private readonly client: OpenAI
 
-  constructor(id: string, model: string, apiKeyEnvVar: string) {
+  constructor(id: string, model: string, apiKeyEnvVar: string, isDirectToken = false) {
     this.id = id
     this.model = model
-    const apiKey = process.env[apiKeyEnvVar]
+    const apiKey = isDirectToken ? apiKeyEnvVar : process.env[apiKeyEnvVar]
     if (!apiKey) {
       throw new Error(
         `Missing API key. Set ${apiKeyEnvVar} or enable MOCK_BRAINS=true.`

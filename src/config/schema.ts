@@ -4,9 +4,16 @@ const brainConfigSchema = z.object({
   id: z.string().min(1),
   provider: z.enum(['anthropic', 'openai', 'gemini', 'ollama', 'mock']),
   model: z.string().min(1),
+  authType: z.enum(['key', 'oauth']).default('key'),
   apiKeyEnvVar: z.string().min(1).optional(),
   baseUrl: z.string().optional(),
 })
+
+export const oauthAppsSchema = z.object({
+  openaiClientId: z.string().optional(),
+  geminiClientId: z.string().optional(),
+  geminiClientSecret: z.string().optional(),
+}).default({})
 
 export const configSchema = z.object({
   version: z.number().int().positive(),
@@ -31,7 +38,8 @@ export const configSchema = z.object({
     brainId: z.string().min(1),
     model: z.string().min(1),
     confidenceThreshold: z.number().min(0).max(1)
-  })
+  }),
+  oauthApps: oauthAppsSchema,
 })
 
 export type AppConfig = z.infer<typeof configSchema>

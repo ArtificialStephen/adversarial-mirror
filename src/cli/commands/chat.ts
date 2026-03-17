@@ -9,10 +9,11 @@ import { buildIntentClassifier } from '../../engine/classifier-factory.js'
 import { MirrorEngine } from '../../engine/mirror-engine.js'
 import { Session } from '../../engine/session.js'
 import { MirrorApp } from '../../ui/mirror-app.js'
+import { resolveOAuthTokens } from '../utils/resolve-tokens.js'
 
 // Commander v12 passes (localOptions, command) for commands with no positional args.
 // Global flags live on command.parent.opts() — reading from localOptions would always be {}.
-export function runChat(_localOpts: Record<string, unknown>, command: Command): void {
+export async function runChat(_localOpts: Record<string, unknown>, command: Command): Promise<void> {
   // Merge local and parent opts — local opts come from command-level flags (--file)
   const parentOpts = command.parent?.opts() ?? {}
   const localOpts = command.opts()
@@ -37,10 +38,13 @@ export function runChat(_localOpts: Record<string, unknown>, command: Command): 
       throw new Error(`Original brain not found: ${originalId}`)
     }
 
-    const originalAdapter = createAdapter(brainConfig)
+    // Resolve OAuth tokens for all relevant brains upfront
+    const oauthTokens = await resolveOAuthTokens(config.brains)
+
+    const originalAdapter = createAdapter(brainConfig, {}, oauthTokens)
     const challengerConfig = config.brains.find(b => b.id === challengerId)
     const challengerAdapter =
-      mirrorEnabled && challengerConfig ? createAdapter(challengerConfig) : undefined
+      mirrorEnabled && challengerConfig ? createAdapter(challengerConfig, {}, oauthTokens) : undefined
 
     // Build judge adapter when mirroring is enabled and judge is requested
     let judgeAdapter = undefined
@@ -48,7 +52,7 @@ export function runChat(_localOpts: Record<string, unknown>, command: Command): 
       const judgeId = (opts['judgeBrain'] as string | undefined) ?? config.session.judgeBrainId
       const judgeConfig = config.brains.find(b => b.id === judgeId)
       if (judgeConfig) {
-        judgeAdapter = createAdapter(judgeConfig)
+        judgeAdapter = createAdapter(judgeConfig, {}, oauthTokens)
       }
     }
 
@@ -66,7 +70,7 @@ export function runChat(_localOpts: Record<string, unknown>, command: Command): 
       }
     }
 
-    const classifier = buildIntentClassifier(config, Boolean(opts['debug']))
+    const classifier = buildIntentClassifier(config, Boolean(opts['debug']), oauthTokens)
     const engine = new MirrorEngine({
       original: originalAdapter,
       challenger: challengerAdapter,

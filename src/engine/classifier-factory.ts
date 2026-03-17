@@ -5,7 +5,8 @@ import { BrainIntentClassifier, HeuristicIntentClassifier } from './intent-class
 
 export function buildIntentClassifier(
   config: AppConfig,
-  debug = false
+  debug = false,
+  oauthTokens?: Map<string, string>
 ): IntentClassifier {
   const classifierConfig = config.classifier
   const brainConfig = config.brains.find(
@@ -22,7 +23,7 @@ export function buildIntentClassifier(
   }
 
   try {
-    const adapter = createAdapter(brainConfig, { model: classifierConfig.model })
+    const adapter = createAdapter(brainConfig, { model: classifierConfig.model }, oauthTokens)
     return new BrainIntentClassifier(adapter)
   } catch (error) {
     if (debug) {

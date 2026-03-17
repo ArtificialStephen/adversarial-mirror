@@ -16,13 +16,19 @@ import {
   runHistoryList,
   runHistoryShow
 } from './commands/history.js'
+import {
+  runAuthSetup,
+  runAuthLogin,
+  runAuthLogout,
+  runAuthStatus
+} from './commands/auth.js'
 
 const program = new Command()
 
 program
   .name('mirror')
   .description('Adversarial Mirror CLI')
-  .version('0.2.4')
+  .version('0.3.0')
   .option('--intensity <level>', 'mild|moderate|aggressive')
   .option('--original <brainId>', 'override original brain')
   .option('--challenger <brainId>', 'override challenger brain')
@@ -60,6 +66,12 @@ brains.command('list').description('List configured brains').action(runBrainsLis
 brains.command('test <id>').description('Test a brain').action(runBrainsTest)
 brains.command('add').description('Add a new brain').action(runBrainsAdd)
 
+const authCmd = program.command('auth').description('OAuth session management')
+authCmd.command('setup <provider>').description('Register your OAuth app credentials (openai|gemini)').action(runAuthSetup)
+authCmd.command('login <provider>').description('Log in via OAuth (openai|gemini)').action(runAuthLogin)
+authCmd.command('logout <provider>').description('Remove stored OAuth tokens').action(runAuthLogout)
+authCmd.command('status').description('Show active OAuth sessions').action(runAuthStatus)
+
 const history = program.command('history').description('History commands')
 history.action(runHistoryList)
 history.command('list').description('List history').action(runHistoryList)
@@ -71,14 +83,8 @@ history
   .action(runHistoryExport)
 
 // Default to 'chat' when no subcommand is given.
-// Appending at the end (after any flags) lets Commander parse global flags at the
-// program level before routing to the chat subcommand. This means:
-//   mirror                   → mirror chat
-//   mirror --intensity aggressive  → mirror --intensity aggressive chat  (global flags preserved)
-//   mirror --help            → shows program help  (not intercepted)
-//   mirror --version         → shows version       (not intercepted)
 const rawArgs = process.argv.slice(2)
-const knownSubcommands = new Set(['chat', 'mirror', 'config', 'brains', 'history'])
+const knownSubcommands = new Set(['chat', 'mirror', 'config', 'brains', 'history', 'auth'])
 const hasVersionOrHelp = rawArgs.some(a => ['-V', '--version', '-h', '--help'].includes(a))
 const hasSubcommand = rawArgs.some(a => knownSubcommands.has(a))
 

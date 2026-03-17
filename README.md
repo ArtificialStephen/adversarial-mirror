@@ -106,6 +106,63 @@ mirror --original claude-sonnet-4-6 --challenger o3-mini --judge-brain claude-op
 
 ---
 
+## OAuth Authentication (no API key required)
+
+OAuth lets you sign in with your existing OpenAI or Gemini/Google account instead of managing API keys. You need to register a free OAuth app once — this takes about 2 minutes.
+
+### OpenAI OAuth
+
+1. Go to [platform.openai.com → Settings → Organization → General](https://platform.openai.com/settings/organization/general)
+2. Scroll to **OAuth apps** → **Create new OAuth app**
+3. Set the redirect URI to `http://localhost:1/callback` (any port — the app picks a free port automatically)
+4. Copy the **Client ID**
+5. Register your credentials with adversarial-mirror:
+   ```bash
+   mirror auth setup openai
+   ```
+6. Log in:
+   ```bash
+   mirror auth login openai   # opens browser → sign in with your OpenAI account
+   ```
+7. Add an OAuth-authenticated brain:
+   ```bash
+   mirror brains add
+   # provider: openai  |  auth type: oauth  |  model: gpt-4o
+   ```
+
+### Gemini OAuth
+
+1. Go to [Google Cloud Console → APIs & Credentials](https://console.cloud.google.com/apis/credentials)
+2. Click **Create credentials → OAuth client ID** → Application type: **Desktop app**
+3. Name it anything (e.g. `adversarial-mirror`) and click **Create**
+4. Copy the **Client ID** and **Client Secret** Google displays
+5. Enable the [Generative Language API](https://console.cloud.google.com/apis/library/generativelanguage.googleapis.com) in the same project
+6. Register your credentials:
+   ```bash
+   mirror auth setup gemini
+   ```
+7. Log in:
+   ```bash
+   mirror auth login gemini   # opens browser → sign in with your Google account
+   ```
+8. Add an OAuth-authenticated brain:
+   ```bash
+   mirror brains add
+   # provider: gemini  |  auth type: oauth  |  model: gemini-2.5-pro
+   ```
+
+### Managing sessions
+
+```bash
+mirror auth status           # show active sessions and expiry times
+mirror auth logout openai    # remove stored tokens
+mirror auth logout gemini
+```
+
+Tokens refresh automatically when they expire — you only need to log in once.
+
+---
+
 ## How it works
 
 ### Intent classification
@@ -253,6 +310,11 @@ mirror brains add                        Add a new brain interactively
 mirror history list                      List saved sessions
 mirror history show <id>                 Print a saved session as JSON
 mirror history export <id> <file>        Export a session to a file
+
+mirror auth setup <provider>             Register your OAuth app credentials (openai|gemini)
+mirror auth login <provider>             Sign in via OAuth
+mirror auth logout <provider>            Remove stored tokens
+mirror auth status                       Show active OAuth sessions
 ```
 
 ---
@@ -307,11 +369,12 @@ mirror config show
 
 Mix and match any provider for original, challenger, and judge independently.
 
-| Provider | Example models | Env var |
+| Provider | Example models | Auth |
 |---|---|---|
-| **Anthropic** | `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5-20251001` | `ANTHROPIC_API_KEY` |
-| **OpenAI** | `gpt-4o`, `o3-mini`, `o3` | `OPENAI_API_KEY` |
-| **Google** | `gemini-2.5-pro`, `gemini-1.5-pro` | `GOOGLE_API_KEY` |
+| **Anthropic** | `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5-20251001` | API key (`ANTHROPIC_API_KEY`) |
+| **OpenAI** | `gpt-4o`, `o3-mini`, `o3` | API key (`OPENAI_API_KEY`) or OAuth |
+| **Google Gemini** | `gemini-2.5-pro`, `gemini-1.5-pro` | API key (`GOOGLE_API_KEY`) or OAuth |
+| **Ollama** | any locally-pulled model | Local — no key needed |
 
 Add a brain with `mirror brains add` or add it directly to the config:
 
