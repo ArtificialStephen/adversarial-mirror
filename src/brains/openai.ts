@@ -24,7 +24,9 @@ export class OpenAIAdapter implements BrainAdapter {
         `Missing API key. Set ${apiKeyEnvVar} or enable MOCK_BRAINS=true.`
       )
     }
-    this.client = new OpenAI({ apiKey })
+    // OAuth tokens are issued for chatgpt.com/backend-api, not api.openai.com
+    const baseURL = isDirectToken ? 'https://chatgpt.com/backend-api' : undefined
+    this.client = new OpenAI({ apiKey, baseURL })
   }
 
   async ping(): Promise<PingResult> {
