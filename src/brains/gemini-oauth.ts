@@ -7,7 +7,9 @@ import type {
 } from '../types/index.js'
 import type { BrainAdapter } from './adapter.js'
 
-const API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
+// Same endpoint as gemini-cli (google-gemini/gemini-cli)
+// cloud-platform scope works here; generativelanguage.googleapis.com does not
+const API_BASE = 'https://cloudcode-pa.googleapis.com/v1internal'
 
 export class GeminiOAuthAdapter implements BrainAdapter {
   readonly id: string
@@ -15,20 +17,39 @@ export class GeminiOAuthAdapter implements BrainAdapter {
   readonly capabilities = { streaming: true }
   private readonly model: string
   private readonly getToken: () => Promise<string>
+  private readonly projectId: string | undefined
 
-  constructor(id: string, model: string, getToken: () => Promise<string>) {
+  constructor(id: string, model: string, getToken: () => Promise<string>, projectId?: string) {
     this.id = id
     this.model = model
     this.getToken = getToken
+    this.projectId = projectId
   }
 
   async ping(): Promise<PingResult> {
+    const start = Date.now()
     try {
       const token = await this.getToken()
-      const res = await fetch(`${API_BASE}/models?pageSize=1`, {
-        headers: { Authorization: `Bearer ${token}` },
+      // Use countTokens as a lightweight ping
+      const res = await fetch(`${API_BASE}:countTokens`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...(this.projectId ? { project: this.projectId } : {}),
+          request: {
+            model: `models/${this.model}`,
+            contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
+          },
+        }),
       })
-      return { ok: res.ok }
+      if (!res.ok) {
+        const body = await res.text()
+        return { ok: false, error: `${res.status}: ${body.slice(0, 200)}` }
+      }
+      return { ok: true, latencyMs: Date.now() - start }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
@@ -48,17 +69,20 @@ export class GeminiOAuthAdapter implements BrainAdapter {
         parts: [{ text: m.content }],
       }))
 
-    const body = {
-      contents,
-      systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
-      generationConfig: {
-        temperature: options?.temperature,
-        maxOutputTokens: options?.maxTokens,
+    const body: Record<string, unknown> = {
+      model: this.model,
+      ...(this.projectId ? { project: this.projectId } : {}),
+      request: {
+        contents,
+        systemInstruction: { role: 'user', parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          ...(options?.temperature != null ? { temperature: options.temperature } : {}),
+          ...(options?.maxTokens ? { maxOutputTokens: options.maxTokens } : {}),
+        },
       },
     }
 
-    const url = `${API_BASE}/models/${this.model}:streamGenerateContent?alt=sse`
-    const res = await fetch(url, {
+    const res = await fetch(`${API_BASE}:streamGenerateContent?alt=sse`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -93,12 +117,14 @@ export class GeminiOAuthAdapter implements BrainAdapter {
         if (data === '[DONE]') continue
         try {
           const event = JSON.parse(data)
-          const delta: string = event?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+          // Response is wrapped: { response: { candidates: [...], usageMetadata: {...} } }
+          const res = event?.response ?? event
+          const delta: string = res?.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
           if (delta) {
             fullText += delta
             yield { delta, isFinal: false }
           }
-          const usage = event?.usageMetadata
+          const usage = res?.usageMetadata
           if (usage) {
             inputTokens = usage.promptTokenCount
             outputTokens = usage.candidatesTokenCount ?? usage.totalTokenCount

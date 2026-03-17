@@ -4,6 +4,7 @@ import { startCallbackServer } from './callback-server.js'
 import { openBrowser } from './open-browser.js'
 import { exchangeCodeForTokens } from './token-exchange.js'
 import { saveTokens } from './token-store.js'
+import { resolveGeminiProject } from './gemini-setup.js'
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -44,10 +45,12 @@ export async function loginGemini(): Promise<void> {
     const tokens = await exchangeCodeForTokens(
       TOKEN_URL, clientId, code, REDIRECT_URI, codeVerifier, clientSecret
     )
+    const projectId = await resolveGeminiProject(tokens.access_token)
     saveTokens('gemini', {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+      projectId,
     })
     process.stdout.write('Gemini login successful.\n')
   } finally {

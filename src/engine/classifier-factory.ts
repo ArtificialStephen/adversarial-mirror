@@ -1,3 +1,4 @@
+import type { OAuthTokens } from '../auth/token-store.js'
 import type { AppConfig } from '../config/schema.js'
 import { createAdapter } from '../brains/factory.js'
 import type { IntentClassifier } from './intent-classifier.js'
@@ -6,7 +7,7 @@ import { BrainIntentClassifier, HeuristicIntentClassifier } from './intent-class
 export function buildIntentClassifier(
   config: AppConfig,
   debug = false,
-  oauthTokens?: Map<string, string>
+  oauthTokens?: Map<string, OAuthTokens>
 ): IntentClassifier {
   const classifierConfig = config.classifier
   const brainConfig = config.brains.find(

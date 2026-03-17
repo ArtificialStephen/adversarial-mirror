@@ -190,7 +190,7 @@ const ExchangeView = React.memo(function ExchangeView({
         <Box marginTop={1}>
           <BrainPanel
             title={`SYNTHESIS${scoreLabel}`}
-            width={columns}
+            width={columns - 1}
             borderColor={THEME.synthesis}
             borderStyle="bold"
           >
@@ -320,7 +320,9 @@ export function MirrorApp({
   const showSideBySide = showChallengerPanel && columns >= 80
   const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : columns
 
-  const hasSynthesisPanel = isSynthesizing || Boolean(currentSynthesis)
+  // Reserve synthesis panel space whenever a judge is configured — this keeps
+  // liveLineLimit stable throughout the query so panels never resize mid-stream.
+  const hasSynthesisPanel = Boolean(judgerId) || isSynthesizing || Boolean(currentSynthesis)
   const panelGroupCount =
     (showSideBySide || !showChallengerPanel ? 1 : 2) +
     (hasSynthesisPanel ? 1 : 0)
@@ -705,6 +707,26 @@ export function MirrorApp({
             <Text dimColor color={THEME.dim}>⊙ classifying...</Text>
           ) : null}
 
+          {/* Synthesis rendered BEFORE brain panels so it's written first in
+              the erase→write cycle — minimises the blank period at the bottom */}
+          {(isSynthesizing || currentSynthesis) && (
+            <Box marginTop={1}>
+              <BrainPanel
+                title={`SYNTHESIS${isSynthesizing ? '  synthesizing...' : synthScoreLabel}`}
+                width={columns - 1}
+                borderColor={THEME.synthesis}
+                borderStyle="bold"
+              >
+                <StreamingText
+                  value={liveLines(currentSynthesis, liveLineLimit, columns - 6)}
+                  waiting={isSynthesizing && !synthesisHasContent}
+                  spinnerFrame={spinnerFrame}
+                  maxLines={liveLineLimit}
+                />
+              </BrainPanel>
+            </Box>
+          )}
+
           <Box marginTop={1} flexDirection={showSideBySide ? 'row' : 'column'}>
             <BrainPanel
               title={`ORIGINAL  ${originalId}`}
@@ -735,24 +757,6 @@ export function MirrorApp({
               </BrainPanel>
             )}
           </Box>
-
-          {(isSynthesizing || currentSynthesis) && (
-            <Box marginTop={1}>
-              <BrainPanel
-                title={`SYNTHESIS${isSynthesizing ? '  synthesizing...' : synthScoreLabel}`}
-                width={columns}
-                borderColor={THEME.synthesis}
-                borderStyle="bold"
-              >
-                <StreamingText
-                  value={liveLines(stripAgreementHeader(currentSynthesis), liveLineLimit, columns - 5)}
-                  waiting={isSynthesizing && !synthesisHasContent}
-                  spinnerFrame={spinnerFrame}
-                  maxLines={liveLineLimit}
-                />
-              </BrainPanel>
-            </Box>
-          )}
         </Box>
       )}
 

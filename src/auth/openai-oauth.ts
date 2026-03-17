@@ -46,6 +46,7 @@ export async function loginOpenAI(): Promise<void> {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+      idToken: tokens.id_token,
     })
     process.stdout.write('OpenAI login successful.\n')
   } finally {

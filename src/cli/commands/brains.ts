@@ -143,11 +143,32 @@ async function fetchModels(
   apiKeyEnvVar?: string
 ): Promise<string[]> {
   if (provider === 'openai') {
-    const token = authType === 'oauth'
-      ? loadTokens('openai')?.accessToken
-      : (apiKeyEnvVar ? process.env[apiKeyEnvVar] : undefined)
-    if (!token) throw new Error('No credentials')
+    if (authType === 'oauth') {
+      // OpenAI OAuth uses the Codex models endpoint
+      const stored = loadTokens('openai')
+      if (!stored) throw new Error('No credentials')
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${stored.accessToken}`,
+        'originator': 'codex_cli_rs',
+        'User-Agent': 'codex_cli_rs/1.0.0 (Windows 11; x64) Terminal',
+      }
+      if (stored.idToken) {
+        try {
+          const payload = JSON.parse(Buffer.from(stored.idToken.split('.')[1], 'base64url').toString())
+          const accountId = payload['https://api.openai.com/auth']?.chatgpt_account_id
+          if (accountId) headers['ChatGPT-Account-ID'] = accountId
+        } catch { /* skip */ }
+      }
+      const res = await fetch('https://chatgpt.com/backend-api/codex/models?client_version=0.115.0', { headers })
+      if (!res.ok) throw new Error(`${res.status}`)
+      const data = await res.json() as { models?: { id?: string; name?: string }[] } | { data?: { id: string }[] }
+      // Handle both possible response shapes
+      const items = (data as any).models ?? (data as any).data ?? []
+      return items.map((m: any) => m.id ?? m.name).filter(Boolean)
+    }
 
+    const token = apiKeyEnvVar ? process.env[apiKeyEnvVar] : undefined
+    if (!token) throw new Error('No credentials')
     const res = await fetch('https://api.openai.com/v1/models', {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -160,19 +181,21 @@ async function fetchModels(
   }
 
   if (provider === 'gemini') {
-    const token = authType === 'oauth'
-      ? loadTokens('gemini')?.accessToken
-      : undefined
-    const apiKey = authType === 'key' && apiKeyEnvVar ? process.env[apiKeyEnvVar] : undefined
+    if (authType === 'oauth') {
+      // OAuth tokens use cloudcode-pa.googleapis.com (same as gemini-cli)
+      // No model list endpoint available — return known models
+      return [
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+      ]
+    }
 
-    const url = token
-      ? 'https://generativelanguage.googleapis.com/v1beta/models'
-      : `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
-    const headers: Record<string, string> = token
-      ? { Authorization: `Bearer ${token}` }
-      : {}
+    const apiKey = apiKeyEnvVar ? process.env[apiKeyEnvVar] : undefined
 
-    const res = await fetch(url, { headers })
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
+    const res = await fetch(url)
     if (!res.ok) throw new Error(`${res.status}`)
     const data = await res.json() as { models: { name: string; supportedGenerationMethods: string[] }[] }
     return data.models

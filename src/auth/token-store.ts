@@ -4,6 +4,8 @@ export interface OAuthTokens {
   accessToken: string
   refreshToken?: string
   expiresAt?: number  // epoch ms
+  idToken?: string    // OpenID Connect id_token JWT (OpenAI only)
+  projectId?: string  // Google Cloud project ID (Gemini OAuth only)
 }
 
 const store = new Conf<Record<string, OAuthTokens>>({
