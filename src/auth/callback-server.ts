@@ -7,7 +7,8 @@ export interface CallbackResult {
 
 export function startCallbackServer(
   port: number,
-  expectedState: string
+  expectedState: string,
+  callbackPath = '/callback'
 ): { waitForCode: () => Promise<CallbackResult>; close: () => void } {
   let resolveCode!: (result: CallbackResult) => void
   let rejectCode!: (err: Error) => void
@@ -18,6 +19,11 @@ export function startCallbackServer(
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`)
+    if (url.pathname !== callbackPath) {
+      res.writeHead(404)
+      res.end('Not found')
+      return
+    }
     const code = url.searchParams.get('code')
     const state = url.searchParams.get('state')
     const error = url.searchParams.get('error')
