@@ -205,9 +205,14 @@ const ExchangeView = React.memo(function ExchangeView({
 // For live streaming panels: tail to maxLines AND truncate each line to maxWidth
 // so Ink never wraps, keeping the dynamic area height exactly predictable.
 // maxWidth = panelWidth - 5: border(2) + padding(2) + 1 col for cursor ▌.
+// Trailing empty lines are stripped so the cursor stays on the last content
+// line rather than floating to an empty line when the model emits a newline.
 function liveLines(text: string, maxLines: number, maxWidth: number): string {
   if (maxLines <= 0 || !text) return ''
   const lines = text.split(/\r?\n/)
+  // Drop trailing empty lines produced by a trailing \n in the stream.
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  if (lines.length === 0) return ''
   const tail = lines.length > maxLines ? lines.slice(-maxLines) : lines
   return tail.map(l => l.length > maxWidth ? l.slice(0, maxWidth) : l).join('\n')
 }
@@ -711,6 +716,7 @@ export function MirrorApp({
                 value={liveLines(currentOriginal, liveLineLimit, panelWidth - 5)}
                 waiting={!originalHasContent}
                 spinnerFrame={spinnerFrame}
+                maxLines={liveLineLimit}
               />
             </BrainPanel>
 
@@ -724,6 +730,7 @@ export function MirrorApp({
                   value={liveLines(currentChallenger, liveLineLimit, panelWidth - 5)}
                   waiting={!challengerHasContent}
                   spinnerFrame={spinnerFrame}
+                  maxLines={liveLineLimit}
                 />
               </BrainPanel>
             )}
@@ -741,6 +748,7 @@ export function MirrorApp({
                   value={liveLines(stripAgreementHeader(currentSynthesis), liveLineLimit, columns - 5)}
                   waiting={isSynthesizing && !synthesisHasContent}
                   spinnerFrame={spinnerFrame}
+                  maxLines={liveLineLimit}
                 />
               </BrainPanel>
             </Box>
