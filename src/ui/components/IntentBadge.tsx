@@ -9,14 +9,14 @@ interface IntentBadgeProps {
 }
 
 const CATEGORY_COLOR: Record<IntentCategory, string> = {
-  factual_lookup:   'green',
-  math_computation: 'green',
-  code_task:        'blue',
-  conversational:   'blackBright',
-  opinion_advice:   'magenta',
-  analysis:         'yellow',
-  interpretation:   'yellow',
-  prediction:       'red',
+  factual_lookup:   '#a6e3a1',  // pastel green
+  math_computation: '#a6e3a1',  // pastel green
+  code_task:        '#89b4fa',  // pastel blue
+  conversational:   '#6c7086',  // muted gray
+  opinion_advice:   '#cba6f7',  // pastel lavender
+  analysis:         '#f9e2af',  // pastel amber
+  interpretation:   '#f9e2af',  // pastel amber
+  prediction:       '#f38ba8',  // pastel rose
 }
 
 const CATEGORY_LABEL: Record<IntentCategory, string> = {
@@ -35,7 +35,7 @@ export function IntentBadge({ category, mirrored, confidence }: IntentBadgeProps
   const label = CATEGORY_LABEL[category] ?? category.toUpperCase()
   const modeIcon = mirrored ? '⇄' : '→'
   const modeLabel = mirrored ? 'MIRROR' : 'DIRECT'
-  const modeColor = mirrored ? 'magenta' : 'green'
+  const modeColor = mirrored ? '#cba6f7' : '#a6e3a1'
   const pct = confidence !== undefined ? `  ${Math.round(confidence * 100)}%` : ''
 
   return (

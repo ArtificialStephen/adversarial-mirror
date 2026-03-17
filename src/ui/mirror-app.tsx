@@ -13,14 +13,14 @@ import { highlightCodeBlocks } from './utils/highlight.js'
 // ── Theme ──────────────────────────────────────────────────────────────────────
 
 const THEME = {
-  original:   'blue',
-  challenger: 'magenta',
-  synthesis:  'yellow',
-  input:      'cyan',
-  ready:      'green',
-  thinking:   'cyan',
-  error:      'red',
-  dim:        'blackBright',
+  original:   '#89b4fa',  // pastel blue
+  challenger: '#cba6f7',  // pastel lavender
+  synthesis:  '#f9e2af',  // pastel amber
+  input:      '#89dceb',  // pastel sky
+  ready:      '#a6e3a1',  // pastel green
+  thinking:   '#74c7ec',  // pastel sapphire
+  error:      '#f38ba8',  // pastel rose
+  dim:        '#6c7086',  // muted gray
 } as const
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ export interface MirrorAppProps {
 
 // ── Gradient helpers ───────────────────────────────────────────────────────────
 
-const GRAD = ['#00D2FF', '#3A7BD5', '#7F5AF0', '#FF6EC7', '#FFB86C']
+const GRAD = ['#89dceb', '#89b4fa', '#cba6f7', '#f5c2e7', '#f9e2af']
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const n = hex.replace('#', '')
@@ -110,16 +110,25 @@ const HeaderView = React.memo(function HeaderView({
 }): JSX.Element {
   const modeText = challengerId
     ? `${originalId}  ⇄  ${challengerId}`
-    : `${originalId}  [direct mode]`
+    : `${originalId}  [direct]`
   const parts = [modeText, intensity]
   if (judgerId) parts.push(`judge: ${judgerId}`)
-  if (persona) parts.push(`persona: ${persona}`)
+  if (persona) parts.push(persona)
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <GradientText text="ADVERSARIAL MIRROR" bold />
-      <Text dimColor color={THEME.dim}>{parts.join('  ·  ')}</Text>
-      <Text dimColor color={THEME.dim}>{'↑↓ history  ctrl+r re-run  /clear reset  ctrl+c exit'}</Text>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor={THEME.input}
+      paddingX={1}
+      marginBottom={1}
+    >
+      <Box>
+        <Text bold color={THEME.input}>✦  </Text>
+        <GradientText text="ADVERSARIAL MIRROR" bold />
+      </Box>
+      <Text color={THEME.dim}>{parts.join('  ·  ')}</Text>
+      <Text color={THEME.dim} dimColor>{'↑↓ history  ctrl+r re-run  /clear reset  ctrl+c exit'}</Text>
     </Box>
   )
 })

@@ -85,21 +85,19 @@ export class BrainIntentClassifier implements IntentClassifier {
   }
 
   async classify(input: string): Promise<IntentResult> {
-    const messages = [{ role: 'user' as const, content: input }]
-    const options: ChatOptions = { temperature: 0 }
-    const stream = this.adapter.chat(messages, intentSystemPrompt, options)
-    let text = ''
-
-    for await (const chunk of stream) {
-      if (chunk.delta) {
-        text += chunk.delta
-      }
-    }
-
     try {
+      const messages = [{ role: 'user' as const, content: input }]
+      const options: ChatOptions = { temperature: 0 }
+      const stream = this.adapter.chat(messages, intentSystemPrompt, options)
+      let text = ''
+
+      for await (const chunk of stream) {
+        if (chunk.delta) text += chunk.delta
+      }
+
       return safeParseIntent(text)
     } catch {
-      // Model returned non-JSON or malformed response — fall back to heuristic
+      // Adapter threw (API error, network, etc.) or model returned non-JSON — fall back to heuristic
       return this.fallback.classify(input)
     }
   }
