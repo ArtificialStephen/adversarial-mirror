@@ -1,28 +1,22 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { Text } from 'ink'
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 interface StreamingTextProps {
   value: string
   dim?: boolean
-  /** Show animated spinner instead of cursor — use when waiting for first token. */
+  /** Show spinner instead of cursor — use while waiting for the first token. */
   waiting?: boolean
+  /** Shared spinner frame index driven by mirror-app's single interval. */
+  spinnerFrame?: number
 }
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
-export function StreamingText({ value, dim, waiting }: StreamingTextProps): JSX.Element {
-  const [frame, setFrame] = useState(0)
-
-  useEffect(() => {
-    if (!waiting) return
-    const id = setInterval(() => setFrame(f => (f + 1) % SPINNER_FRAMES.length), 80)
-    return () => clearInterval(id)
-  }, [waiting])
-
+export function StreamingText({ value, dim, waiting, spinnerFrame = 0 }: StreamingTextProps): JSX.Element {
   if (waiting && !value) {
     return (
       <Text color="cyan" dimColor>
-        {SPINNER_FRAMES[frame]}{'  waiting for response...'}
+        {SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]}{'  waiting for response...'}
       </Text>
     )
   }

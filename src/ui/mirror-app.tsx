@@ -318,12 +318,19 @@ export function MirrorApp({
     setStaticItems(prev => [...prev, item])
   }, [commitTick])
 
+  // Spinner animation frame — driven here so there is exactly ONE interval
+  // instead of one per StreamingText component. Eliminates the 3×12.5fps
+  // re-render storm that was saturating Ink's terminal output.
+  const [spinnerFrame, setSpinnerFrame] = useState(0)
+
   // Batch streaming text updates at 60 ms to avoid a re-render on every token.
+  // Piggyback the spinner frame advance onto the same interval.
   useEffect(() => {
     const id = setInterval(() => {
       setCurrentOriginal(pendingOrigRef.current)
       setCurrentChallenger(pendingChalRef.current)
       setCurrentSynthesis(pendingSynthRef.current)
+      setSpinnerFrame(f => (f + 1) % 10)
     }, 60)
     return () => clearInterval(id)
   }, [])
@@ -341,10 +348,16 @@ export function MirrorApp({
   //   • Synthesis is always a separate full-width row group.
   //
   // Fixed chrome (rows consumed outside panel groups):
-  //   You(1) + intent(1) + margin-before-panels(1) + margin-before-status(1) + status(1) + input(1) = 6
-  //   + margin-before-synthesis(1) if synthesis panel is visible = 7
+  //   You(1) + intent(0–1) + margin-before-panels(1) + margin-before-status(1) + status(1) + input(1) = 5–6
+  //   + margin-before-synthesis(1) if synthesis panel is visible = 6–7
+  //   We use 6 / 7 (worst-case with intent row present) for safety.
   //
-  // Formula: fixedChrome + panelGroups × (5 + L) ≤ rows  →  L ≤ (rows − fixedChrome) / panelGroups − 5
+  // BUFFER: We always subtract 3 extra rows so the dynamic area never exactly fills
+  // the terminal. Without this buffer, a one-row chrome miscount (intent absent,
+  // classify disabled, etc.) causes Ink to overflow and redraw chaotically.
+  //
+  // Cap at 16 lines — plenty to follow a streaming response; prevents runaway growth
+  // on tall terminals. (Original cap was 8; 16 is the sweet spot.)
   const hasSynthesisPanel = isSynthesizing || Boolean(currentSynthesis)
   const panelGroupCount =
     (showSideBySide || !showChallengerPanel ? 1 : 2) +
@@ -352,7 +365,7 @@ export function MirrorApp({
   const fixedChrome = hasSynthesisPanel ? 7 : 6
   const liveLineLimit = Math.max(
     1,
-    Math.min(30, Math.floor((rows - fixedChrome) / panelGroupCount) - 5)
+    Math.min(16, Math.floor((rows - fixedChrome - 3) / panelGroupCount) - 5)
   )
 
   const formatText = useCallback(
@@ -732,6 +745,7 @@ export function MirrorApp({
               <StreamingText
                 value={liveLines(currentOriginal, liveLineLimit, panelWidth - 5)}
                 waiting={!originalHasContent}
+                spinnerFrame={spinnerFrame}
               />
             </BrainPanel>
 
@@ -743,6 +757,7 @@ export function MirrorApp({
                 <StreamingText
                   value={liveLines(currentChallenger, liveLineLimit, panelWidth - 5)}
                   waiting={!challengerHasContent}
+                  spinnerFrame={spinnerFrame}
                 />
               </BrainPanel>
             )}
@@ -762,6 +777,7 @@ export function MirrorApp({
                 <StreamingText
                   value={liveLines(stripAgreementHeader(currentSynthesis), liveLineLimit, columns - 5)}
                   waiting={isSynthesizing && !synthesisHasContent}
+                  spinnerFrame={spinnerFrame}
                 />
               </BrainPanel>
             </Box>
