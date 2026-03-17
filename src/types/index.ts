@@ -5,7 +5,7 @@ export interface ConversationMessage {
   content: string
 }
 
-export type BrainProvider = 'anthropic' | 'openai' | 'gemini' | 'mock'
+export type BrainProvider = 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'mock'
 
 export interface BrainCapabilities {
   streaming: boolean
@@ -69,6 +69,8 @@ export interface HistoryEntry {
   original: BrainResult
   challenger?: BrainResult
   intent?: IntentResult
+  synthesis?: string
+  agreementScore?: number
 }
 
 export type Intensity = 'mild' | 'moderate' | 'aggressive'

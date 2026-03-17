@@ -2,9 +2,10 @@ import { z } from 'zod'
 
 const brainConfigSchema = z.object({
   id: z.string().min(1),
-  provider: z.enum(['anthropic', 'openai', 'gemini', 'mock']),
+  provider: z.enum(['anthropic', 'openai', 'gemini', 'ollama', 'mock']),
   model: z.string().min(1),
-  apiKeyEnvVar: z.string().min(1)
+  apiKeyEnvVar: z.string().min(1).optional(),
+  baseUrl: z.string().optional(),
 })
 
 export const configSchema = z.object({

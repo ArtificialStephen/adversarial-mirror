@@ -7,7 +7,7 @@ import { Box, Static, Text, useInput, useStdout } from 'ink'
 import type { BrainResult, IntentResult, SynthesisResult } from '../types/index.js'
 import type { MirrorEngine } from '../engine/mirror-engine.js'
 import { Session } from '../engine/session.js'
-import { addHistoryEntry } from '../history/store.js'
+import { addHistoryEntry, listHistory } from '../history/store.js'
 import { BrainPanel } from './components/BrainPanel.js'
 import { IntentBadge } from './components/IntentBadge.js'
 import { StreamingText } from './components/StreamingText.js'
@@ -82,6 +82,13 @@ function GradientLine({ line, bold }: { line: string; bold?: boolean }): JSX.Ele
   )
 }
 
+// ── Score bar ──────────────────────────────────────────────────────────────────
+
+function scoreBar(score: number, barWidth = 12): string {
+  const filled = Math.round((score / 100) * barWidth)
+  return '█'.repeat(filled) + '░'.repeat(barWidth - filled)
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 // Wrapped in memo so re-renders during streaming don't touch the header.
@@ -95,6 +102,7 @@ const HeaderView = React.memo(function HeaderView({
       {lines.map((line, i) => <GradientLine key={i} line={line} bold />)}
       <Text color="gray" dimColor>
         {'  '}{originalId}{challengerId ? ` vs ${challengerId}` : '  [direct mode]'}{'  '}[{intensity}]
+        {'  '}<Text color="blackBright">↑↓ history  Ctrl+R re-run  /clear reset  Ctrl+C exit</Text>
       </Text>
     </Box>
   )
@@ -120,7 +128,7 @@ const ExchangeView = React.memo(function ExchangeView({
   const panelWidth = sideBySide ? Math.floor((columns - 1) / 2) : columns
 
   const scoreLabel = exchange.agreementScore !== undefined
-    ? `  [agreement: ${exchange.agreementScore}%]`
+    ? `  ${scoreBar(exchange.agreementScore)}  ${exchange.agreementScore}%`
     : ''
 
   return (
@@ -205,15 +213,9 @@ function fitLines(lines: string[], cols: number): string[] {
   return aligned.map(l => (l.length > cols ? l.slice(0, cols) : l))
 }
 
-function tailLines(text: string, maxLines: number): string {
-  if (maxLines <= 0) return ''
-  const lines = text.split(/\r?\n/)
-  if (lines.length <= maxLines) return text
-  return lines.slice(-maxLines).join('\n')
-}
-
 // For live streaming panels: tail to maxLines AND truncate each line to maxWidth
 // so Ink never has to wrap, keeping the dynamic area height exactly predictable.
+// maxWidth is panelWidth - 5: border(2) + padding(2) + 1 col reserved for cursor ▌.
 function liveLines(text: string, maxLines: number, maxWidth: number): string {
   if (maxLines <= 0 || !text) return ''
   const lines = text.split(/\r?\n/)
@@ -272,6 +274,18 @@ export function MirrorApp({
   const [turnCount, setTurnCount] = useState(0)
   const [commitTick, setCommitTick] = useState(0)
 
+  // Per-brain "first token arrived" flags — used to switch from spinner to cursor
+  const [originalHasContent, setOriginalHasContent] = useState(false)
+  const [challengerHasContent, setChallengerHasContent] = useState(false)
+  const [synthesisHasContent, setSynthesisHasContent] = useState(false)
+
+  // Prompt history navigation
+  const [historyNavIndex, setHistoryNavIndex] = useState(-1)
+  const [inputSnapshot, setInputSnapshot] = useState('')
+
+  // Transient status messages (e.g. after /clear)
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null)
+
   // ── Refs ─────────────────────────────────────────────────────────────────────
   const runningRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -282,6 +296,11 @@ export function MirrorApp({
   const startTimesRef = useRef(new Map<string, number>())
   const lastChunkTimesRef = useRef(new Map<string, number>())
   const columnsRef = useRef(columns)
+  const lastQuestionRef = useRef('')
+  // Refs track first-token arrival inside the async loop (state is stale in closures)
+  const origHasContentRef = useRef(false)
+  const chalHasContentRef = useRef(false)
+  const synthHasContentRef = useRef(false)
 
   useEffect(() => { columnsRef.current = columns }, [columns])
 
@@ -313,12 +332,28 @@ export function MirrorApp({
   const showChallengerPanel = Boolean(challengerId) && (intent?.shouldMirror ?? true)
   const showSideBySide = showChallengerPanel && columns >= 80
   const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : columns
-  // Worst-case dynamic area height (all 3 panels stacked + chrome):
-  //   fixed chrome: question(1) + intent(1) + 3×marginTop(3) + status(1) + input(1) = 7
-  //   per panel: topBorder(1) + topPad(1) + title(1) + content(L) + botPad(1) + botBorder(1) = 5+L
-  //   total: 7 + 3×(5+L) = 22 + 3×L  ≤ rows  →  L ≤ (rows-22)/3
-  // Cap at 8 — more than enough to follow a streaming response.
-  const liveLineLimit = Math.max(1, Math.min(8, Math.floor((rows - 22) / 3)))
+
+  // Dynamic liveLineLimit — calculated from which panel row-groups are currently visible.
+  //
+  // Panel row groups (each consumes 5+L rows: top-border, top-pad, title, L×content, bot-pad, bot-border):
+  //   • In side-by-side mode, original+challenger share one row group.
+  //   • In stacked mode, each panel is its own row group.
+  //   • Synthesis is always a separate full-width row group.
+  //
+  // Fixed chrome (rows consumed outside panel groups):
+  //   You(1) + intent(1) + margin-before-panels(1) + margin-before-status(1) + status(1) + input(1) = 6
+  //   + margin-before-synthesis(1) if synthesis panel is visible = 7
+  //
+  // Formula: fixedChrome + panelGroups × (5 + L) ≤ rows  →  L ≤ (rows − fixedChrome) / panelGroups − 5
+  const hasSynthesisPanel = isSynthesizing || Boolean(currentSynthesis)
+  const panelGroupCount =
+    (showSideBySide || !showChallengerPanel ? 1 : 2) +
+    (hasSynthesisPanel ? 1 : 0)
+  const fixedChrome = hasSynthesisPanel ? 7 : 6
+  const liveLineLimit = Math.max(
+    1,
+    Math.min(30, Math.floor((rows - fixedChrome) / panelGroupCount) - 5)
+  )
 
   const formatText = useCallback(
     (text: string) => (syntaxHighlighting ? highlightCodeBlocks(text) : text),
@@ -331,7 +366,18 @@ export function MirrorApp({
     const question = input.trim()
     if (!question) return
 
+    // Handle meta-commands before starting a brain run
+    if (question === '/clear') {
+      setInput('')
+      session.clear()
+      setTurnCount(0)
+      setSessionMessage('Session cleared.')
+      setTimeout(() => setSessionMessage(null), 2000)
+      return
+    }
+
     runningRef.current = true
+    lastQuestionRef.current = question
     setInput('')
     setError(null)
     setIntent(null)
@@ -342,6 +388,14 @@ export function MirrorApp({
     setOriginalStats(null)
     setChallengerStats(null)
     setSynthesisStats(null)
+    setOriginalHasContent(false)
+    setChallengerHasContent(false)
+    setSynthesisHasContent(false)
+    origHasContentRef.current = false
+    chalHasContentRef.current = false
+    synthHasContentRef.current = false
+    setHistoryNavIndex(-1)
+    setInputSnapshot('')
     pendingOrigRef.current = ''
     pendingChalRef.current = ''
     pendingSynthRef.current = ''
@@ -390,9 +444,17 @@ export function MirrorApp({
           if (event.brainId === originalId) {
             originalBuffer += event.chunk.delta
             pendingOrigRef.current = originalBuffer
+            if (!origHasContentRef.current && event.chunk.delta) {
+              origHasContentRef.current = true
+              setOriginalHasContent(true)
+            }
           } else if (event.brainId === challengerId) {
             challengerBuffer += event.chunk.delta
             pendingChalRef.current = challengerBuffer
+            if (!chalHasContentRef.current && event.chunk.delta) {
+              chalHasContentRef.current = true
+              setChallengerHasContent(true)
+            }
           }
         }
 
@@ -430,6 +492,10 @@ export function MirrorApp({
         if (event.type === 'synthesis_chunk') {
           synthesisBuffer += event.chunk.delta
           pendingSynthRef.current = synthesisBuffer
+          if (!synthHasContentRef.current && event.chunk.delta) {
+            synthHasContentRef.current = true
+            setSynthesisHasContent(true)
+          }
         }
 
         if (event.type === 'synthesis_complete') {
@@ -446,6 +512,8 @@ export function MirrorApp({
             original: originalResult,
             challenger: challengerResult,
             intent: intentResult,
+            synthesis: synthResult?.text,
+            agreementScore: synthResult?.agreementScore,
           })
 
           const exchange: CompletedExchange = {
@@ -506,17 +574,70 @@ export function MirrorApp({
       }
       process.exit(0)
     }
+
+    // Re-run last question
+    if (key.ctrl && ch === 'r') {
+      if (!isThinking && lastQuestionRef.current) {
+        setInput(lastQuestionRef.current)
+        setHistoryNavIndex(-1)
+        setInputSnapshot('')
+      }
+      return
+    }
+
     if (key.return) { void submit(); return }
-    if (key.backspace || key.delete) { setInput(p => p.slice(0, -1)); return }
-    if (ch && !key.ctrl && !key.meta) setInput(p => p + ch)
+    if (key.backspace || key.delete) {
+      setInput(p => p.slice(0, -1))
+      if (historyNavIndex !== -1) { setHistoryNavIndex(-1); setInputSnapshot('') }
+      return
+    }
+
+    // History navigation
+    if (key.upArrow) {
+      if (isThinking) return
+      const entries = listHistory()
+      if (!entries.length) return
+      const nextIdx = historyNavIndex === -1 ? 0 : Math.min(historyNavIndex + 1, entries.length - 1)
+      if (historyNavIndex === -1) setInputSnapshot(input)
+      setHistoryNavIndex(nextIdx)
+      setInput(entries[nextIdx].question)
+      return
+    }
+    if (key.downArrow) {
+      if (isThinking) return
+      if (historyNavIndex === -1) return
+      if (historyNavIndex === 0) {
+        setHistoryNavIndex(-1)
+        setInput(inputSnapshot)
+      } else {
+        const nextIdx = historyNavIndex - 1
+        setHistoryNavIndex(nextIdx)
+        const entries = listHistory()
+        setInput(entries[nextIdx].question)
+      }
+      return
+    }
+
+    if (ch && !key.ctrl && !key.meta) {
+      if (historyNavIndex !== -1) { setHistoryNavIndex(-1); setInputSnapshot('') }
+      setInput(p => p + ch)
+    }
   })
 
   // ── Status bar ───────────────────────────────────────────────────────────────
   const statusParts: string[] = []
-  if (isClassifying) statusParts.push('Classifying...')
-  else if (isSynthesizing) statusParts.push('Synthesizing...')
-  else if (isThinking) statusParts.push('Thinking...')
-  else statusParts.push('Ready')
+
+  if (sessionMessage) {
+    statusParts.push(sessionMessage)
+  } else if (isClassifying) {
+    statusParts.push('Classifying...')
+  } else if (isSynthesizing) {
+    statusParts.push('Synthesizing...')
+  } else if (isThinking) {
+    statusParts.push('Thinking...')
+  } else {
+    statusParts.push('Ready')
+  }
 
   if (showTokenCounts) {
     const origT = formatTokens(originalStats?.inputTokens, originalStats?.outputTokens)
@@ -530,21 +651,32 @@ export function MirrorApp({
       if (synthT) statusParts.push(`synth ${synthT}`)
     }
   }
+
   if (showLatency && originalStats?.latencyMs != null) {
-    statusParts.push(`orig ${(originalStats.latencyMs / 1000).toFixed(1)}s`)
+    if (originalStats.outputTokens != null && originalStats.latencyMs > 0) {
+      const tps = Math.round(originalStats.outputTokens / (originalStats.latencyMs / 1000))
+      statusParts.push(`orig ${tps}t/s`)
+    } else {
+      statusParts.push(`orig ${(originalStats.latencyMs / 1000).toFixed(1)}s`)
+    }
   }
   if (showLatency && challengerStats?.latencyMs != null) {
-    statusParts.push(`chal ${(challengerStats.latencyMs / 1000).toFixed(1)}s`)
+    if (challengerStats.outputTokens != null && challengerStats.latencyMs > 0) {
+      const tps = Math.round(challengerStats.outputTokens / (challengerStats.latencyMs / 1000))
+      statusParts.push(`chal ${tps}t/s`)
+    } else {
+      statusParts.push(`chal ${(challengerStats.latencyMs / 1000).toFixed(1)}s`)
+    }
   }
   if (synthesisStats?.agreementScore !== undefined) {
     statusParts.push(`agreement ${synthesisStats.agreementScore}%`)
   }
   statusParts.push(`${turnCount} turn${turnCount !== 1 ? 's' : ''}`)
-  statusParts.push('Ctrl+C to exit')
+  if (!isThinking) statusParts.push('Ctrl+C exit')
 
   const synthScoreLabel = synthesisStats?.agreementScore !== undefined
-    ? `  [agreement: ${synthesisStats.agreementScore}%]`
-    : ''
+    ? `  ${scoreBar(synthesisStats.agreementScore)}  ${synthesisStats.agreementScore}%  ${judgerId ?? ''}`
+    : `  ${judgerId ?? ''}`
 
   // ── Render ───────────────────────────────────────────────────────────────────
   // Header + completed exchanges are written via <Static> so they never redraw,
@@ -573,6 +705,7 @@ export function MirrorApp({
           </React.Fragment>
         )}
       </Static>
+
       {/* In-progress streaming — only present while a query is running */}
       {isThinking && activeQuestion && (
         <Box flexDirection="column">
@@ -596,7 +729,10 @@ export function MirrorApp({
               width={panelWidth}
               marginRight={showSideBySide && showChallengerPanel ? 1 : 0}
             >
-              <StreamingText value={liveLines(currentOriginal, liveLineLimit, panelWidth - 4)} />
+              <StreamingText
+                value={liveLines(currentOriginal, liveLineLimit, panelWidth - 5)}
+                waiting={!originalHasContent}
+              />
             </BrainPanel>
 
             {showChallengerPanel && (
@@ -604,7 +740,10 @@ export function MirrorApp({
                 title={`CHALLENGER  ${challengerId}  [${intensity}]`}
                 width={panelWidth}
               >
-                <StreamingText value={liveLines(currentChallenger, liveLineLimit, panelWidth - 4)} />
+                <StreamingText
+                  value={liveLines(currentChallenger, liveLineLimit, panelWidth - 5)}
+                  waiting={!challengerHasContent}
+                />
               </BrainPanel>
             )}
           </Box>
@@ -616,11 +755,14 @@ export function MirrorApp({
           {(isSynthesizing || currentSynthesis) && (
             <Box marginTop={1}>
               <BrainPanel
-                title={`SYNTHESIS${isSynthesizing ? '  synthesizing...' : synthScoreLabel}  ${judgerId ?? ''}`}
+                title={`SYNTHESIS${isSynthesizing ? '  synthesizing...' : synthScoreLabel}`}
                 width={columns}
                 borderColor="yellow"
               >
-                <StreamingText value={liveLines(stripAgreementHeader(currentSynthesis), liveLineLimit, columns - 4)} />
+                <StreamingText
+                  value={liveLines(stripAgreementHeader(currentSynthesis), liveLineLimit, columns - 5)}
+                  waiting={isSynthesizing && !synthesisHasContent}
+                />
               </BrainPanel>
             </Box>
           )}
@@ -642,6 +784,9 @@ export function MirrorApp({
       {/* Input prompt */}
       <Box>
         <Text color="cyan" bold>{'> '}</Text>
+        {historyNavIndex >= 0 && (
+          <Text color="blackBright">{`[${historyNavIndex + 1}] `}</Text>
+        )}
         <Text>{input}</Text>
         <Text color={isThinking ? 'gray' : 'cyan'}>█</Text>
       </Box>

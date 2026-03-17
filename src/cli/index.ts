@@ -67,6 +67,7 @@ history.command('show <id>').description('Show history entry').action(runHistory
 history
   .command('export <id> <file>')
   .description('Export history entry to a file')
+  .option('--format <fmt>', 'json or markdown (auto-detected from .md extension)')
   .action(runHistoryExport)
 
 // Default to 'chat' when no subcommand is given.
