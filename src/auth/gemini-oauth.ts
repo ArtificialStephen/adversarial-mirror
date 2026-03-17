@@ -1,34 +1,36 @@
-import { randomBytes } from 'node:crypto'
 import { getGeminiAppCredentials } from './app-credentials.js'
 import { generatePKCE } from './pkce.js'
-import { findFreePort, startCallbackServer } from './callback-server.js'
+import { startCallbackServer } from './callback-server.js'
 import { openBrowser } from './open-browser.js'
 import { exchangeCodeForTokens } from './token-exchange.js'
 import { saveTokens } from './token-store.js'
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
-const SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
+const SCOPES = [
+  'https://www.googleapis.com/auth/cloud-platform',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+].join(' ')
+const CALLBACK_PORT = 8085
+const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}/oauth2callback`
 
 export async function loginGemini(): Promise<void> {
   const { clientId, clientSecret } = getGeminiAppCredentials()
-  const port = await findFreePort()
-  const redirectUri = `http://localhost:${port}/callback`
   const { codeVerifier, codeChallenge } = generatePKCE()
-  const state = randomBytes(16).toString('hex')
 
-  const { waitForCode, close } = startCallbackServer(port, state)
+  const { waitForCode, close } = startCallbackServer(CALLBACK_PORT, codeVerifier, '/oauth2callback')
 
   const params = new URLSearchParams({
-    response_type: 'code',
     client_id: clientId,
-    redirect_uri: redirectUri,
-    scope: SCOPE,
-    access_type: 'offline',
-    prompt: 'consent',
+    response_type: 'code',
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES,
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
-    state,
+    state: codeVerifier,
+    access_type: 'offline',
+    prompt: 'consent',
   })
 
   const authUrl = `${AUTH_URL}?${params}`
@@ -40,7 +42,7 @@ export async function loginGemini(): Promise<void> {
   try {
     const { code } = await waitForCode()
     const tokens = await exchangeCodeForTokens(
-      TOKEN_URL, clientId, code, redirectUri, codeVerifier, clientSecret
+      TOKEN_URL, clientId, code, REDIRECT_URI, codeVerifier, clientSecret
     )
     saveTokens('gemini', {
       accessToken: tokens.access_token,
