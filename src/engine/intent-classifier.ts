@@ -21,33 +21,50 @@ Return ONLY JSON.`
 export class HeuristicIntentClassifier implements IntentClassifier {
   async classify(input: string): Promise<IntentResult> {
     const trimmed = input.trim().toLowerCase()
-    const looksFactual =
-      trimmed.startsWith('who ') ||
-      trimmed.startsWith('what ') ||
-      trimmed.startsWith('when ') ||
-      trimmed.startsWith('where ')
 
-    const category: IntentCategory = looksFactual ? 'factual_lookup' : 'analysis'
-    const shouldMirror = !looksFactual
+    // Patterns that strongly indicate a single objective answer (no mirroring needed)
+    const looksFactual =
+      /^(who|what|when|where|how many|how much|how long|how far|how old)\b/.test(trimmed) ||
+      /^(define|calculate|convert|list|enumerate|name|tell me)\b/.test(trimmed) ||
+      /^(write|create|build|implement|fix|debug|refactor|add|remove|update)\b/.test(trimmed) ||
+      /^(show me|give me|find|get|fetch|run|execute)\b/.test(trimmed)
+
+    // Patterns that benefit from a challenger perspective
+    const looksOpinionated =
+      /\b(should|would|could|best|better|worse|recommend|prefer|think|feel|believe|opinion|advice)\b/.test(trimmed) ||
+      /\b(pros|cons|tradeoff|vs\.?|versus|compare|difference between)\b/.test(trimmed) ||
+      /\b(why|is it worth|is it good|is it bad|what do you think)\b/.test(trimmed)
+
+    let category: IntentCategory
+    let shouldMirror: boolean
+
+    if (looksFactual && !looksOpinionated) {
+      category = /^(write|create|build|implement|fix|debug|refactor)/.test(trimmed)
+        ? 'code_task'
+        : 'factual_lookup'
+      shouldMirror = false
+    } else if (looksOpinionated) {
+      category = 'opinion_advice'
+      shouldMirror = true
+    } else {
+      category = 'analysis'
+      shouldMirror = true
+    }
 
     return {
       category,
       shouldMirror,
-      confidence: looksFactual ? 0.55 : 0.45,
-      reason: looksFactual
-        ? 'Heuristic: question starts with who/what/when/where.'
-        : 'Heuristic: default to analysis for open-ended prompts.'
+      confidence: 0.6,
+      reason: `Heuristic: ${shouldMirror ? 'open-ended or opinion-based prompt.' : 'objective/task-oriented prompt.'}`
     }
   }
 }
 
 export class BrainIntentClassifier implements IntentClassifier {
   private readonly adapter: BrainAdapter
-  private readonly threshold: number
 
-  constructor(adapter: BrainAdapter, threshold = 0.75) {
+  constructor(adapter: BrainAdapter) {
     this.adapter = adapter
-    this.threshold = threshold
   }
 
   async classify(input: string): Promise<IntentResult> {
@@ -62,25 +79,7 @@ export class BrainIntentClassifier implements IntentClassifier {
       }
     }
 
-    const parsed = safeParseIntent(text)
-    const category = parsed.category
-    const shouldMirror = parsed.shouldMirror
-    const confidence = parsed.confidence
-
-    if (confidence < this.threshold) {
-      return {
-        ...parsed,
-        shouldMirror: true,
-        reason: `${parsed.reason} (below confidence threshold ${this.threshold}).`
-      }
-    }
-
-    return {
-      category,
-      shouldMirror,
-      confidence,
-      reason: parsed.reason
-    }
+    return safeParseIntent(text)
   }
 }
 

@@ -43,27 +43,27 @@ describe('HeuristicIntentClassifier', () => {
 })
 
 describe('BrainIntentClassifier with mock adapter', () => {
-  it('returns shouldMirror=true when confidence is below threshold', async () => {
-    // Mock returns JSON with low confidence
+  it('trusts the model answer even when confidence is low', async () => {
+    // Classifier no longer overrides shouldMirror based on confidence —
+    // the model's answer is used as-is regardless of confidence value.
     const mock = new MockAdapter('test', '{"category":"factual_lookup","shouldMirror":false,"confidence":0.3,"reason":"low confidence"}')
-    const clf = new BrainIntentClassifier(mock, 0.75)
+    const clf = new BrainIntentClassifier(mock)
     const result = await clf.classify('What is 2+2?')
-    // Below threshold → forced to mirror
-    expect(result.shouldMirror).toBe(true)
-    expect(result.reason).toContain('below confidence threshold')
+    expect(result.shouldMirror).toBe(false)
+    expect(result.category).toBe('factual_lookup')
   })
 
-  it('returns shouldMirror=false for factual with high confidence', async () => {
+  it('returns shouldMirror=false for factual', async () => {
     const mock = new MockAdapter('test', '{"category":"factual_lookup","shouldMirror":false,"confidence":0.95,"reason":"clear factual"}')
-    const clf = new BrainIntentClassifier(mock, 0.75)
+    const clf = new BrainIntentClassifier(mock)
     const result = await clf.classify('What is the capital of France?')
     expect(result.shouldMirror).toBe(false)
     expect(result.category).toBe('factual_lookup')
   })
 
-  it('returns shouldMirror=true for analysis with high confidence', async () => {
+  it('returns shouldMirror=true for analysis', async () => {
     const mock = new MockAdapter('test', '{"category":"analysis","shouldMirror":true,"confidence":0.9,"reason":"opinion"}')
-    const clf = new BrainIntentClassifier(mock, 0.75)
+    const clf = new BrainIntentClassifier(mock)
     const result = await clf.classify('Should I use microservices?')
     expect(result.shouldMirror).toBe(true)
     expect(result.category).toBe('analysis')

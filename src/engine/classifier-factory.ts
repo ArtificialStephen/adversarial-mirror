@@ -23,10 +23,7 @@ export function buildIntentClassifier(
 
   try {
     const adapter = createAdapter(brainConfig, { model: classifierConfig.model })
-    return new BrainIntentClassifier(
-      adapter,
-      classifierConfig.confidenceThreshold
-    )
+    return new BrainIntentClassifier(adapter)
   } catch (error) {
     if (debug) {
       process.stderr.write(

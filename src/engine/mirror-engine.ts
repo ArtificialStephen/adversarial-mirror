@@ -107,12 +107,12 @@ export class MirrorEngine {
 
     for await (const chunk of stream) {
       accumulator.add(chunk)
-      yield { type: 'stream_chunk', brainId: this.original.id, chunk }
+      yield { type: 'stream_chunk', brainId: this.original.id, role: 'original', chunk }
     }
 
     const response = accumulator.complete()
 
-    yield { type: 'brain_complete', brainId: this.original.id, response }
+    yield { type: 'brain_complete', brainId: this.original.id, role: 'original', response }
     yield { type: 'all_complete' }
   }
 
@@ -156,12 +156,8 @@ export class MirrorEngine {
     const challengerAccumulator = createAccumulator()
 
     for await (const item of mergeStreams([
-      { brainId: this.original.id, stream: originalStream, accumulator: originalAccumulator },
-      {
-        brainId: this.challenger!.id,
-        stream: challengerStream,
-        accumulator: challengerAccumulator
-      }
+      { brainId: this.original.id, role: 'original', stream: originalStream, accumulator: originalAccumulator },
+      { brainId: this.challenger!.id, role: 'challenger', stream: challengerStream, accumulator: challengerAccumulator }
     ])) {
       yield item
     }
@@ -172,11 +168,13 @@ export class MirrorEngine {
     yield {
       type: 'brain_complete',
       brainId: this.original.id,
+      role: 'original',
       response: originalResponse
     }
     yield {
       type: 'brain_complete',
       brainId: this.challenger!.id,
+      role: 'challenger',
       response: challengerResponse
     }
 
@@ -267,6 +265,7 @@ type StreamChunk = {
 
 interface MergeEntry {
   brainId: string
+  role: 'original' | 'challenger'
   stream: AsyncGenerator<StreamChunk, { text: string; inputTokens?: number; outputTokens?: number }>
   accumulator: ReturnType<typeof createAccumulator>
 }
@@ -318,6 +317,7 @@ async function* mergeStreams(
     yield {
       type: 'stream_chunk',
       brainId: current.entry.brainId,
+      role: current.entry.role,
       chunk: result.value
     }
     current.next = current.entry.stream.next()

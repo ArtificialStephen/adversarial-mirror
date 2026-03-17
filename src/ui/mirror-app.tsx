@@ -434,8 +434,8 @@ export function MirrorApp({
     abortRef.current = controller
 
     startTimesRef.current = new Map<string, number>([
-      [originalId, Date.now()],
-      ...(challengerId ? [[challengerId, Date.now()] as [string, number]] : []),
+      ['original', Date.now()],
+      ...(challengerId ? [['challenger', Date.now()] as [string, number]] : []),
     ])
     lastChunkTimesRef.current = new Map<string, number>()
 
@@ -453,15 +453,16 @@ export function MirrorApp({
         }
 
         if (event.type === 'stream_chunk') {
-          lastChunkTimesRef.current.set(event.brainId, Date.now())
-          if (event.brainId === originalId) {
+          // Route by role so same-brain configs (original === challenger) work correctly.
+          lastChunkTimesRef.current.set(event.role, Date.now())
+          if (event.role === 'original') {
             originalBuffer += event.chunk.delta
             pendingOrigRef.current = originalBuffer
             if (!origHasContentRef.current && event.chunk.delta) {
               origHasContentRef.current = true
               setOriginalHasContent(true)
             }
-          } else if (event.brainId === challengerId) {
+          } else if (event.role === 'challenger') {
             challengerBuffer += event.chunk.delta
             pendingChalRef.current = challengerBuffer
             if (!chalHasContentRef.current && event.chunk.delta) {
@@ -472,9 +473,9 @@ export function MirrorApp({
         }
 
         if (event.type === 'brain_complete') {
-          const completedAt = lastChunkTimesRef.current.get(event.brainId) ?? Date.now()
-          const latency = completedAt - (startTimesRef.current.get(event.brainId) ?? completedAt)
-          if (event.brainId === originalId) {
+          const completedAt = lastChunkTimesRef.current.get(event.role) ?? Date.now()
+          const latency = completedAt - (startTimesRef.current.get(event.role) ?? completedAt)
+          if (event.role === 'original') {
             const text = event.response.text || originalBuffer
             originalResult = {
               brainId: originalId,
@@ -485,7 +486,7 @@ export function MirrorApp({
             }
             setOriginalStats(originalResult)
             session.addAssistant(text)
-          } else if (event.brainId === challengerId) {
+          } else if (event.role === 'challenger') {
             const text = event.response.text || challengerBuffer
             challengerResult = {
               brainId: challengerId!,
