@@ -1,29 +1,32 @@
 import { randomBytes } from 'node:crypto'
 import { getOpenAIAppCredentials } from './app-credentials.js'
 import { generatePKCE } from './pkce.js'
-import { findFreePort, startCallbackServer } from './callback-server.js'
+import { startCallbackServer } from './callback-server.js'
 import { openBrowser } from './open-browser.js'
 import { exchangeCodeForTokens } from './token-exchange.js'
 import { saveTokens } from './token-store.js'
 
 const AUTH_URL = 'https://auth.openai.com/oauth/authorize'
 const TOKEN_URL = 'https://auth.openai.com/oauth/token'
-const SCOPES = 'openai offline_access'
+const SCOPES = 'openid profile email offline_access'
+const AUDIENCE = 'https://api.openai.com/v1'
+// Port registered for this OAuth client — must match exactly.
+const CALLBACK_PORT = 1455
 
 export async function loginOpenAI(): Promise<void> {
   const { clientId } = getOpenAIAppCredentials()
-  const port = await findFreePort()
-  const redirectUri = `http://localhost:${port}/callback`
+  const redirectUri = `http://localhost:${CALLBACK_PORT}/callback`
   const { codeVerifier, codeChallenge } = generatePKCE()
   const state = randomBytes(16).toString('hex')
 
-  const { waitForCode, close } = startCallbackServer(port, state)
+  const { waitForCode, close } = startCallbackServer(CALLBACK_PORT, state)
 
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: clientId,
     redirect_uri: redirectUri,
     scope: SCOPES,
+    audience: AUDIENCE,
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
     state,

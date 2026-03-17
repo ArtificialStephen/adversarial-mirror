@@ -9,16 +9,15 @@ export interface GeminiAppCredentials {
   clientSecret: string
 }
 
+// Default: openclaw's public OAuth client (open-source, MIT licensed).
+// Override via OPENAI_OAUTH_CLIENT_ID env var or mirror auth setup openai.
+const OPENAI_DEFAULT_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
+
 export function getOpenAIAppCredentials(): OpenAIAppCredentials {
   const clientId =
-    process.env.OPENAI_OAUTH_CLIENT_ID ?? loadConfig().oauthApps.openaiClientId
-  if (!clientId) {
-    throw new Error(
-      'OpenAI OAuth app not configured.\n' +
-      'Run: mirror auth setup openai\n' +
-      'Or set the OPENAI_OAUTH_CLIENT_ID environment variable.'
-    )
-  }
+    process.env.OPENAI_OAUTH_CLIENT_ID ??
+    loadConfig().oauthApps.openaiClientId ??
+    OPENAI_DEFAULT_CLIENT_ID
   return { clientId }
 }
 
