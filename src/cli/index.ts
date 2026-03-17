@@ -22,7 +22,7 @@ const program = new Command()
 program
   .name('mirror')
   .description('Adversarial Mirror CLI')
-  .version('0.1.0')
+  .version('0.2.4')
   .option('--intensity <level>', 'mild|moderate|aggressive')
   .option('--original <brainId>', 'override original brain')
   .option('--challenger <brainId>', 'override challenger brain')

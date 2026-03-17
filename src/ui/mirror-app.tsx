@@ -1,8 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Box, Static, Text, useInput, useStdout } from 'ink'
 import type { BrainResult, IntentResult, SynthesisResult } from '../types/index.js'
 import type { MirrorEngine } from '../engine/mirror-engine.js'
@@ -12,6 +9,19 @@ import { BrainPanel } from './components/BrainPanel.js'
 import { IntentBadge } from './components/IntentBadge.js'
 import { StreamingText } from './components/StreamingText.js'
 import { highlightCodeBlocks } from './utils/highlight.js'
+
+// ── Theme ──────────────────────────────────────────────────────────────────────
+
+const THEME = {
+  original:   'blue',
+  challenger: 'magenta',
+  synthesis:  'yellow',
+  input:      'cyan',
+  ready:      'green',
+  thinking:   'cyan',
+  error:      'red',
+  dim:        'blackBright',
+} as const
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -26,10 +36,8 @@ interface CompletedExchange {
   isMirrored: boolean
 }
 
-// StaticItem union — items written permanently to stdout via <Static>.
-// The header is the first item (added at mount); exchanges are appended as queries complete.
 type StaticItem =
-  | { type: 'header'; id: 'header' }
+  | { type: 'header'; id: 'header'; originalId: string; challengerId?: string; judgerId?: string; intensity: string; persona?: string }
   | { type: 'exchange'; id: string; exchange: CompletedExchange; originalId: string; challengerId?: string; columns: number }
 
 export interface MirrorAppProps {
@@ -39,6 +47,7 @@ export interface MirrorAppProps {
   challengerId?: string
   judgerId?: string
   intensity: string
+  persona?: string
   layout?: 'side-by-side' | 'stacked'
   showTokenCounts?: boolean
   showLatency?: boolean
@@ -69,9 +78,8 @@ function gradColor(pos: number): string {
   return `#${[r, g, bv].map(v => v.toString(16).padStart(2, '0')).join('')}`
 }
 
-function GradientLine({ line, bold }: { line: string; bold?: boolean }): JSX.Element {
-  if (!line.trim()) return <Text> </Text>
-  const chars = Array.from(line)
+function GradientText({ text, bold }: { text: string; bold?: boolean }): JSX.Element {
+  const chars = Array.from(text)
   const last = Math.max(chars.length - 1, 1)
   return (
     <Text bold={bold} wrap="truncate">
@@ -84,38 +92,42 @@ function GradientLine({ line, bold }: { line: string; bold?: boolean }): JSX.Ele
 
 // ── Score bar ──────────────────────────────────────────────────────────────────
 
-function scoreBar(score: number, barWidth = 12): string {
+function scoreBar(score: number, barWidth = 10): string {
   const filled = Math.round((score / 100) * barWidth)
   return '█'.repeat(filled) + '░'.repeat(barWidth - filled)
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
-// Wrapped in memo so re-renders during streaming don't touch the header.
 const HeaderView = React.memo(function HeaderView({
-  lines, originalId, challengerId, intensity
+  originalId, challengerId, judgerId, intensity, persona
 }: {
-  lines: string[]; originalId: string; challengerId?: string; intensity: string
+  originalId: string
+  challengerId?: string
+  judgerId?: string
+  intensity: string
+  persona?: string
 }): JSX.Element {
+  const modeText = challengerId
+    ? `${originalId}  ⇄  ${challengerId}`
+    : `${originalId}  [direct mode]`
+  const parts = [modeText, intensity]
+  if (judgerId) parts.push(`judge: ${judgerId}`)
+  if (persona) parts.push(`persona: ${persona}`)
+
   return (
     <Box flexDirection="column" marginBottom={1}>
-      {lines.map((line, i) => <GradientLine key={i} line={line} bold />)}
-      <Text color="gray" dimColor>
-        {'  '}{originalId}{challengerId ? ` vs ${challengerId}` : '  [direct mode]'}{'  '}[{intensity}]
-        {'  '}<Text color="blackBright">↑↓ history  Ctrl+R re-run  /clear reset  Ctrl+C exit</Text>
-      </Text>
+      <GradientText text="ADVERSARIAL MIRROR" bold />
+      <Text dimColor color={THEME.dim}>{parts.join('  ·  ')}</Text>
+      <Text dimColor color={THEME.dim}>{'↑↓ history  ctrl+r re-run  /clear reset  ctrl+c exit'}</Text>
     </Box>
   )
 })
 
-// Strip the "AGREEMENT: X%" metadata line — the score is already in the panel
-// title, so showing it again inside the panel body is redundant noise.
 function stripAgreementHeader(text: string): string {
   return text.replace(/^AGREEMENT:\s*-?\d+%[^\n]*\n?\n?/i, '').trimStart()
 }
 
-// Wrapped in memo: completed exchanges never change after they're added, so
-// they should never re-render during the next query's streaming updates.
 const ExchangeView = React.memo(function ExchangeView({
   exchange, originalId, challengerId, columns
 }: {
@@ -134,13 +146,16 @@ const ExchangeView = React.memo(function ExchangeView({
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Text bold>
-        <Text color="cyan">You: </Text>
+        <Text color={THEME.input}>❯ </Text>
         <Text>{exchange.question}</Text>
       </Text>
       {exchange.intent && (
-        <Box>
-          <IntentBadge category={exchange.intent.category} mirrored={exchange.intent.shouldMirror} />
-          <Text color="gray"> {Math.round(exchange.intent.confidence * 100)}%</Text>
+        <Box marginTop={0}>
+          <IntentBadge
+            category={exchange.intent.category}
+            mirrored={exchange.intent.shouldMirror}
+            confidence={exchange.intent.confidence}
+          />
         </Box>
       )}
       <Box marginTop={1} flexDirection={sideBySide ? 'row' : 'column'}>
@@ -148,6 +163,7 @@ const ExchangeView = React.memo(function ExchangeView({
           title={`ORIGINAL  ${originalId}`}
           width={panelWidth}
           marginRight={sideBySide ? 1 : 0}
+          titleColor={THEME.original}
         >
           <Text wrap="wrap">{exchange.original}</Text>
         </BrainPanel>
@@ -155,6 +171,7 @@ const ExchangeView = React.memo(function ExchangeView({
           <BrainPanel
             title={`CHALLENGER  ${challengerId}`}
             width={panelWidth}
+            titleColor={THEME.challenger}
           >
             <Text wrap="wrap">{exchange.challenger}</Text>
           </BrainPanel>
@@ -165,7 +182,8 @@ const ExchangeView = React.memo(function ExchangeView({
           <BrainPanel
             title={`SYNTHESIS${scoreLabel}`}
             width={columns}
-            borderColor="yellow"
+            borderColor={THEME.synthesis}
+            borderStyle="bold"
           >
             <Text wrap="wrap">{stripAgreementHeader(exchange.synthesis)}</Text>
           </BrainPanel>
@@ -175,55 +193,15 @@ const ExchangeView = React.memo(function ExchangeView({
   )
 })
 
-// ── Header file loading ────────────────────────────────────────────────────────
-
-function loadRawHeaderLines(): string[] {
-  const cwd = process.cwd()
-  const candidates = [
-    resolve(cwd, 'src', 'ui', 'header.txt'),
-    resolve(cwd, 'header.txt'),
-  ]
-  for (const f of candidates) {
-    if (!existsSync(f)) continue
-    try {
-      const lines = readFileSync(f, 'utf8').split(/\r?\n/)
-      while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop()
-      return lines
-    } catch { continue }
-  }
-  try {
-    const p = fileURLToPath(new URL('./header.txt', import.meta.url))
-    if (existsSync(p)) {
-      const lines = readFileSync(p, 'utf8').split(/\r?\n/)
-      while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop()
-      return lines
-    }
-  } catch { /* no header file bundled */ }
-  return []
-}
-
-function fitLines(lines: string[], cols: number): string[] {
-  if (!lines.length || cols <= 0) return []
-  const trimmed = lines.map(l => l.replace(/\s+$/, ''))
-  const nonEmpty = trimmed.filter(l => l.trim().length > 0)
-  const indent = nonEmpty.length
-    ? Math.min(...nonEmpty.map(l => l.match(/^\s*/)?.[0].length ?? 0))
-    : 0
-  const aligned = indent > 0 ? trimmed.map(l => l.slice(indent)) : trimmed
-  return aligned.map(l => (l.length > cols ? l.slice(0, cols) : l))
-}
-
 // For live streaming panels: tail to maxLines AND truncate each line to maxWidth
-// so Ink never has to wrap, keeping the dynamic area height exactly predictable.
-// maxWidth is panelWidth - 5: border(2) + padding(2) + 1 col reserved for cursor ▌.
+// so Ink never wraps, keeping the dynamic area height exactly predictable.
+// maxWidth = panelWidth - 5: border(2) + padding(2) + 1 col for cursor ▌.
 function liveLines(text: string, maxLines: number, maxWidth: number): string {
   if (maxLines <= 0 || !text) return ''
   const lines = text.split(/\r?\n/)
   const tail = lines.length > maxLines ? lines.slice(-maxLines) : lines
   return tail.map(l => l.length > maxWidth ? l.slice(0, maxWidth) : l).join('\n')
 }
-
-// ── Formatting ─────────────────────────────────────────────────────────────────
 
 function formatTokens(input?: number, output?: number): string | null {
   if (input === undefined && output === undefined) return null
@@ -239,6 +217,7 @@ export function MirrorApp({
   challengerId,
   judgerId,
   intensity,
+  persona,
   showTokenCounts = false,
   showLatency = true,
   syntaxHighlighting = true,
@@ -247,17 +226,12 @@ export function MirrorApp({
   const columns = stdout?.columns ?? 120
   const rows = stdout?.rows ?? 40
 
-  const headerLines = useMemo(() => {
-    const raw = loadRawHeaderLines()
-    return fitLines(raw, Math.max(1, columns - 1))
-  }, [])
-
-  // -- Static content (header + completed exchanges) --
+  // ── Static content (header + completed exchanges) ─────────────────────────────
   const [staticItems, setStaticItems] = useState<StaticItem[]>([
-    { type: 'header', id: 'header' }
+    { type: 'header', id: 'header', originalId, challengerId, judgerId, intensity, persona }
   ])
 
-  // ── Dynamic UI state ─────────────────────────────────────────────────────────
+  // ── Dynamic UI state ──────────────────────────────────────────────────────────
   const [input, setInput] = useState('')
   const [activeQuestion, setActiveQuestion] = useState('')
   const [currentOriginal, setCurrentOriginal] = useState('')
@@ -274,19 +248,15 @@ export function MirrorApp({
   const [turnCount, setTurnCount] = useState(0)
   const [commitTick, setCommitTick] = useState(0)
 
-  // Per-brain "first token arrived" flags — used to switch from spinner to cursor
   const [originalHasContent, setOriginalHasContent] = useState(false)
   const [challengerHasContent, setChallengerHasContent] = useState(false)
   const [synthesisHasContent, setSynthesisHasContent] = useState(false)
 
-  // Prompt history navigation
   const [historyNavIndex, setHistoryNavIndex] = useState(-1)
   const [inputSnapshot, setInputSnapshot] = useState('')
-
-  // Transient status messages (e.g. after /clear)
   const [sessionMessage, setSessionMessage] = useState<string | null>(null)
 
-  // ── Refs ─────────────────────────────────────────────────────────────────────
+  // ── Refs ──────────────────────────────────────────────────────────────────────
   const runningRef = useRef(false)
   const abortRef = useRef<AbortController | null>(null)
   const pendingOrigRef = useRef('')
@@ -297,7 +267,6 @@ export function MirrorApp({
   const lastChunkTimesRef = useRef(new Map<string, number>())
   const columnsRef = useRef(columns)
   const lastQuestionRef = useRef('')
-  // Refs track first-token arrival inside the async loop (state is stale in closures)
   const origHasContentRef = useRef(false)
   const chalHasContentRef = useRef(false)
   const synthHasContentRef = useRef(false)
@@ -318,13 +287,10 @@ export function MirrorApp({
     setStaticItems(prev => [...prev, item])
   }, [commitTick])
 
-  // Spinner animation frame — driven here so there is exactly ONE interval
-  // instead of one per StreamingText component. Eliminates the 3×12.5fps
-  // re-render storm that was saturating Ink's terminal output.
+  // Single spinner interval — shared by all StreamingText components.
   const [spinnerFrame, setSpinnerFrame] = useState(0)
 
-  // Batch streaming text updates at 60 ms to avoid a re-render on every token.
-  // Piggyback the spinner frame advance onto the same interval.
+  // Batch streaming state at 60ms to avoid per-token re-renders.
   useEffect(() => {
     const id = setInterval(() => {
       setCurrentOriginal(pendingOrigRef.current)
@@ -335,29 +301,11 @@ export function MirrorApp({
     return () => clearInterval(id)
   }, [])
 
-  // ── Layout ───────────────────────────────────────────────────────────────────
+  // ── Layout ────────────────────────────────────────────────────────────────────
   const showChallengerPanel = Boolean(challengerId) && (intent?.shouldMirror ?? true)
   const showSideBySide = showChallengerPanel && columns >= 80
   const panelWidth = showSideBySide ? Math.floor((columns - 1) / 2) : columns
 
-  // Dynamic liveLineLimit — calculated from which panel row-groups are currently visible.
-  //
-  // Panel row groups (each consumes 5+L rows: top-border, top-pad, title, L×content, bot-pad, bot-border):
-  //   • In side-by-side mode, original+challenger share one row group.
-  //   • In stacked mode, each panel is its own row group.
-  //   • Synthesis is always a separate full-width row group.
-  //
-  // Fixed chrome (rows consumed outside panel groups):
-  //   You(1) + intent(0–1) + margin-before-panels(1) + margin-before-status(1) + status(1) + input(1) = 5–6
-  //   + margin-before-synthesis(1) if synthesis panel is visible = 6–7
-  //   We use 6 / 7 (worst-case with intent row present) for safety.
-  //
-  // BUFFER: We always subtract 3 extra rows so the dynamic area never exactly fills
-  // the terminal. Without this buffer, a one-row chrome miscount (intent absent,
-  // classify disabled, etc.) causes Ink to overflow and redraw chaotically.
-  //
-  // Cap at 16 lines — plenty to follow a streaming response; prevents runaway growth
-  // on tall terminals. (Original cap was 8; 16 is the sweet spot.)
   const hasSynthesisPanel = isSynthesizing || Boolean(currentSynthesis)
   const panelGroupCount =
     (showSideBySide || !showChallengerPanel ? 1 : 2) +
@@ -373,18 +321,17 @@ export function MirrorApp({
     [syntaxHighlighting]
   )
 
-  // ── Submit ───────────────────────────────────────────────────────────────────
+  // ── Submit ────────────────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
     if (runningRef.current) return
     const question = input.trim()
     if (!question) return
 
-    // Handle meta-commands before starting a brain run
     if (question === '/clear') {
       setInput('')
       session.clear()
       setTurnCount(0)
-      setSessionMessage('Session cleared.')
+      setSessionMessage('session cleared')
       setTimeout(() => setSessionMessage(null), 2000)
       return
     }
@@ -453,7 +400,6 @@ export function MirrorApp({
         }
 
         if (event.type === 'stream_chunk') {
-          // Route by role so same-brain configs (original === challenger) work correctly.
           lastChunkTimesRef.current.set(event.role, Date.now())
           if (event.role === 'original') {
             originalBuffer += event.chunk.delta
@@ -541,7 +487,6 @@ export function MirrorApp({
             isMirrored,
           }
 
-          // Defer Static write until after the streaming panels are cleared.
           pendingExchangeRef.current = {
             type: 'exchange',
             id: entryId,
@@ -579,7 +524,7 @@ export function MirrorApp({
     }
   }, [challengerId, engine, formatText, input, originalId, session])
 
-  // ── Input handling ───────────────────────────────────────────────────────────
+  // ── Input handling ────────────────────────────────────────────────────────────
   useInput((ch, key) => {
     if (key.ctrl && ch === 'c') {
       if (isThinking && abortRef.current) {
@@ -589,7 +534,6 @@ export function MirrorApp({
       process.exit(0)
     }
 
-    // Re-run last question
     if (key.ctrl && ch === 'r') {
       if (!isThinking && lastQuestionRef.current) {
         setInput(lastQuestionRef.current)
@@ -606,7 +550,6 @@ export function MirrorApp({
       return
     }
 
-    // History navigation
     if (key.upArrow) {
       if (isThinking) return
       const entries = listHistory()
@@ -626,8 +569,7 @@ export function MirrorApp({
       } else {
         const nextIdx = historyNavIndex - 1
         setHistoryNavIndex(nextIdx)
-        const entries = listHistory()
-        setInput(entries[nextIdx].question)
+        setInput(listHistory()[nextIdx].question)
       }
       return
     }
@@ -638,63 +580,71 @@ export function MirrorApp({
     }
   })
 
-  // ── Status bar ───────────────────────────────────────────────────────────────
-  const statusParts: string[] = []
+  // ── Status bar ────────────────────────────────────────────────────────────────
+  let statusIcon: string
+  let statusWord: string
+  let statusColor: string
 
   if (sessionMessage) {
-    statusParts.push(sessionMessage)
+    statusIcon = '✓'
+    statusWord = sessionMessage
+    statusColor = THEME.ready
   } else if (isClassifying) {
-    statusParts.push('Classifying...')
+    statusIcon = '⊙'
+    statusWord = 'classifying...'
+    statusColor = THEME.thinking
   } else if (isSynthesizing) {
-    statusParts.push('Synthesizing...')
+    statusIcon = '⚖'
+    statusWord = 'synthesizing...'
+    statusColor = THEME.synthesis
   } else if (isThinking) {
-    statusParts.push('Thinking...')
+    statusIcon = '⟳'
+    statusWord = 'thinking...'
+    statusColor = THEME.thinking
   } else {
-    statusParts.push('Ready')
+    statusIcon = '✓'
+    statusWord = 'ready'
+    statusColor = THEME.ready
   }
 
-  if (showTokenCounts) {
-    const origT = formatTokens(originalStats?.inputTokens, originalStats?.outputTokens)
-    if (origT) statusParts.push(`orig ${origT}`)
-    if (challengerStats) {
-      const chalT = formatTokens(challengerStats.inputTokens, challengerStats.outputTokens)
-      if (chalT) statusParts.push(`chal ${chalT}`)
-    }
-    if (synthesisStats) {
-      const synthT = formatTokens(synthesisStats.inputTokens, synthesisStats.outputTokens)
-      if (synthT) statusParts.push(`synth ${synthT}`)
-    }
-  }
+  const metricParts: string[] = []
 
   if (showLatency && originalStats?.latencyMs != null) {
     if (originalStats.outputTokens != null && originalStats.latencyMs > 0) {
-      const tps = Math.round(originalStats.outputTokens / (originalStats.latencyMs / 1000))
-      statusParts.push(`orig ${tps}t/s`)
+      metricParts.push(`orig ${Math.round(originalStats.outputTokens / (originalStats.latencyMs / 1000))}t/s`)
     } else {
-      statusParts.push(`orig ${(originalStats.latencyMs / 1000).toFixed(1)}s`)
+      metricParts.push(`orig ${(originalStats.latencyMs / 1000).toFixed(1)}s`)
     }
   }
   if (showLatency && challengerStats?.latencyMs != null) {
     if (challengerStats.outputTokens != null && challengerStats.latencyMs > 0) {
-      const tps = Math.round(challengerStats.outputTokens / (challengerStats.latencyMs / 1000))
-      statusParts.push(`chal ${tps}t/s`)
+      metricParts.push(`chal ${Math.round(challengerStats.outputTokens / (challengerStats.latencyMs / 1000))}t/s`)
     } else {
-      statusParts.push(`chal ${(challengerStats.latencyMs / 1000).toFixed(1)}s`)
+      metricParts.push(`chal ${(challengerStats.latencyMs / 1000).toFixed(1)}s`)
+    }
+  }
+  if (showTokenCounts) {
+    const origT = formatTokens(originalStats?.inputTokens, originalStats?.outputTokens)
+    if (origT) metricParts.push(`orig ${origT}`)
+    if (challengerStats) {
+      const chalT = formatTokens(challengerStats.inputTokens, challengerStats.outputTokens)
+      if (chalT) metricParts.push(`chal ${chalT}`)
+    }
+    if (synthesisStats) {
+      const synthT = formatTokens(synthesisStats.inputTokens, synthesisStats.outputTokens)
+      if (synthT) metricParts.push(`synth ${synthT}`)
     }
   }
   if (synthesisStats?.agreementScore !== undefined) {
-    statusParts.push(`agreement ${synthesisStats.agreementScore}%`)
+    metricParts.push(`agreement ${synthesisStats.agreementScore}%`)
   }
-  statusParts.push(`${turnCount} turn${turnCount !== 1 ? 's' : ''}`)
-  if (!isThinking) statusParts.push('Ctrl+C exit')
+  metricParts.push(`${turnCount} turn${turnCount !== 1 ? 's' : ''}`)
 
   const synthScoreLabel = synthesisStats?.agreementScore !== undefined
     ? `  ${scoreBar(synthesisStats.agreementScore)}  ${synthesisStats.agreementScore}%  ${judgerId ?? ''}`
     : `  ${judgerId ?? ''}`
 
-  // ── Render ───────────────────────────────────────────────────────────────────
-  // Header + completed exchanges are written via <Static> so they never redraw,
-  // eliminating the flash on every keystroke in the input field.
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <Box flexDirection="column">
 
@@ -703,10 +653,11 @@ export function MirrorApp({
           <React.Fragment key={item.id}>
             {item.type === 'header' ? (
               <HeaderView
-                lines={headerLines}
-                originalId={originalId}
-                challengerId={challengerId}
-                intensity={intensity}
+                originalId={item.originalId}
+                challengerId={item.challengerId}
+                judgerId={item.judgerId}
+                intensity={item.intensity}
+                persona={item.persona}
               />
             ) : (
               <ExchangeView
@@ -720,21 +671,24 @@ export function MirrorApp({
         )}
       </Static>
 
-      {/* In-progress streaming — only present while a query is running */}
+      {/* In-progress streaming */}
       {isThinking && activeQuestion && (
         <Box flexDirection="column">
           <Text bold>
-            <Text color="cyan">You: </Text>
+            <Text color={THEME.input}>❯ </Text>
             <Text wrap="truncate">{activeQuestion}</Text>
           </Text>
 
           {intent ? (
-            <Box>
-              <IntentBadge category={intent.category} mirrored={intent.shouldMirror} />
-              <Text color="gray"> {Math.round(intent.confidence * 100)}%</Text>
+            <Box marginTop={0}>
+              <IntentBadge
+                category={intent.category}
+                mirrored={intent.shouldMirror}
+                confidence={intent.confidence}
+              />
             </Box>
           ) : isClassifying ? (
-            <Text color="gray" dimColor>Classifying...</Text>
+            <Text dimColor color={THEME.dim}>⊙ classifying...</Text>
           ) : null}
 
           <Box marginTop={1} flexDirection={showSideBySide ? 'row' : 'column'}>
@@ -742,6 +696,7 @@ export function MirrorApp({
               title={`ORIGINAL  ${originalId}`}
               width={panelWidth}
               marginRight={showSideBySide && showChallengerPanel ? 1 : 0}
+              titleColor={THEME.original}
             >
               <StreamingText
                 value={liveLines(currentOriginal, liveLineLimit, panelWidth - 5)}
@@ -754,6 +709,7 @@ export function MirrorApp({
               <BrainPanel
                 title={`CHALLENGER  ${challengerId}  [${intensity}]`}
                 width={panelWidth}
+                titleColor={THEME.challenger}
               >
                 <StreamingText
                   value={liveLines(currentChallenger, liveLineLimit, panelWidth - 5)}
@@ -764,16 +720,13 @@ export function MirrorApp({
             )}
           </Box>
 
-          {/* Live synthesis panel — streams the judge's response in real time.
-              Appears only while the judge is running or has streamed content.
-              Disappears atomically in the same render that shows the completed
-              exchange, so it never overlaps with the static panel below. */}
           {(isSynthesizing || currentSynthesis) && (
             <Box marginTop={1}>
               <BrainPanel
                 title={`SYNTHESIS${isSynthesizing ? '  synthesizing...' : synthScoreLabel}`}
                 width={columns}
-                borderColor="yellow"
+                borderColor={THEME.synthesis}
+                borderStyle="bold"
               >
                 <StreamingText
                   value={liveLines(stripAgreementHeader(currentSynthesis), liveLineLimit, columns - 5)}
@@ -789,23 +742,27 @@ export function MirrorApp({
       {/* Error */}
       {error && (
         <Box marginTop={1}>
-          <Text color="red">Error: {error}</Text>
+          <Text color={THEME.error}>✕  {error}</Text>
         </Box>
       )}
 
       {/* Status */}
       <Box marginTop={1}>
-        <Text color="gray" dimColor wrap="truncate">{statusParts.join(' · ')}</Text>
+        <Text bold color={statusColor} dimColor>{statusIcon} </Text>
+        <Text color={statusColor} dimColor>{statusWord}</Text>
+        {metricParts.length > 0 && (
+          <Text color={THEME.dim} dimColor>{'  ' + metricParts.join('  ·  ')}</Text>
+        )}
       </Box>
 
-      {/* Input prompt */}
+      {/* Input */}
       <Box>
-        <Text color="cyan" bold>{'> '}</Text>
+        <Text color={THEME.input} bold>{'❯ '}</Text>
         {historyNavIndex >= 0 && (
-          <Text color="blackBright">{`[${historyNavIndex + 1}] `}</Text>
+          <Text color={THEME.dim}>{`[${historyNavIndex + 1}] `}</Text>
         )}
         <Text>{input}</Text>
-        <Text color={isThinking ? 'gray' : 'cyan'}>█</Text>
+        <Text color={isThinking ? THEME.dim : THEME.input}>█</Text>
       </Box>
 
     </Box>

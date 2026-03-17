@@ -1,6 +1,6 @@
 {
   "name": "adversarial-mirror",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Terminal-first adversarial AI middleware. Routes open-ended prompts to two models in parallel, forces a challenger to surface blind spots, and synthesizes a verdict.",
   "author": "Stephen Marullo",
   "license": "MIT",
@@ -33,7 +33,6 @@
   ],
   "scripts": {
     "build": "tsup",
-    "postbuild": "node --input-type=module -e \"import{copyFileSync}from'node:fs';try{copyFileSync('src/ui/header.txt','dist/header.txt')}catch{}\"",
     "dev": "tsup --watch",
     "dev:chat": "node dist/cli.js chat",
     "homebrew:generate": "node scripts/generate-homebrew.mjs",

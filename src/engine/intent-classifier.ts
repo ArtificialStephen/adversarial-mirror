@@ -9,7 +9,7 @@ export interface IntentClassifier {
   classify(input: string): Promise<IntentResult>
 }
 
-const intentSystemPrompt = `You are an intent classifier for a CLI assistant. 
+const intentSystemPrompt = `You are an intent classifier for a CLI assistant.
 Return strict JSON with keys: category, shouldMirror, confidence, reason.
 Categories: factual_lookup, math_computation, code_task, conversational, opinion_advice, analysis, interpretation, prediction.
 Rules:
@@ -22,17 +22,33 @@ export class HeuristicIntentClassifier implements IntentClassifier {
   async classify(input: string): Promise<IntentResult> {
     const trimmed = input.trim().toLowerCase()
 
-    // Patterns that strongly indicate a single objective answer (no mirroring needed)
+    // Greetings, closings, small talk — no challenger needed
+    const looksConversational =
+      /^(hi|hello|hey|sup|yo|howdy|good morning|good afternoon|good evening|good night)\b/.test(trimmed) ||
+      /^(thanks|thank you|cheers|bye|goodbye|see you|take care)\b/.test(trimmed) ||
+      /^(how are you|what's up|how's it going|nice to meet you)\b/.test(trimmed) ||
+      (trimmed.split(/\s+/).length <= 2 && /^(hi|hello|hey|thanks|bye|ok|okay|sure|yes|no|yep|nope)$/.test(trimmed))
+
+    if (looksConversational) {
+      return {
+        category: 'conversational',
+        shouldMirror: false,
+        confidence: 0.85,
+        reason: 'Heuristic: conversational greeting or small talk.'
+      }
+    }
+
+    // Objective patterns — single correct answer or concrete task
     const looksFactual =
       /^(who|what|when|where|how many|how much|how long|how far|how old)\b/.test(trimmed) ||
       /^(define|calculate|convert|list|enumerate|name|tell me)\b/.test(trimmed) ||
       /^(write|create|build|implement|fix|debug|refactor|add|remove|update)\b/.test(trimmed) ||
       /^(show me|give me|find|get|fetch|run|execute)\b/.test(trimmed)
 
-    // Patterns that benefit from a challenger perspective
+    // Opinion/debate patterns — benefits from a challenger
     const looksOpinionated =
       /\b(should|would|could|best|better|worse|recommend|prefer|think|feel|believe|opinion|advice)\b/.test(trimmed) ||
-      /\b(pros|cons|tradeoff|vs\.?|versus|compare|difference between)\b/.test(trimmed) ||
+      /\b(pros|cons|tradeoffs?|vs\.?|versus|compare|difference between)\b/.test(trimmed) ||
       /\b(why|is it worth|is it good|is it bad|what do you think)\b/.test(trimmed)
 
     let category: IntentCategory
@@ -62,13 +78,14 @@ export class HeuristicIntentClassifier implements IntentClassifier {
 
 export class BrainIntentClassifier implements IntentClassifier {
   private readonly adapter: BrainAdapter
+  private readonly fallback = new HeuristicIntentClassifier()
 
   constructor(adapter: BrainAdapter) {
     this.adapter = adapter
   }
 
   async classify(input: string): Promise<IntentResult> {
-    const messages = [{ role: 'user', content: input }] as const
+    const messages = [{ role: 'user' as const, content: input }]
     const options: ChatOptions = { temperature: 0 }
     const stream = this.adapter.chat(messages, intentSystemPrompt, options)
     let text = ''
@@ -79,7 +96,12 @@ export class BrainIntentClassifier implements IntentClassifier {
       }
     }
 
-    return safeParseIntent(text)
+    try {
+      return safeParseIntent(text)
+    } catch {
+      // Model returned non-JSON or malformed response — fall back to heuristic
+      return this.fallback.classify(input)
+    }
   }
 }
 
@@ -100,9 +122,7 @@ function safeParseIntent(text: string): IntentResult {
   const shouldMirror =
     typeof parsed.shouldMirror === 'boolean'
       ? parsed.shouldMirror
-      : ['opinion_advice', 'analysis', 'interpretation', 'prediction'].includes(
-          category
-        )
+      : ['opinion_advice', 'analysis', 'interpretation', 'prediction'].includes(category)
   const reason =
     typeof parsed.reason === 'string' && parsed.reason
       ? parsed.reason

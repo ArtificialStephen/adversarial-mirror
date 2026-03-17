@@ -87,6 +87,7 @@ export function runChat(_localOpts: Record<string, unknown>, command: Command): 
         challengerId: challengerAdapter?.id,
         judgerId: judgeAdapter?.id,
         intensity,
+        persona,
         layout: config.ui.layout,
         showTokenCounts: config.ui.showTokenCounts,
         showLatency: config.ui.showLatency,

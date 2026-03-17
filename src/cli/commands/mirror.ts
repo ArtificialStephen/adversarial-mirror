@@ -101,8 +101,8 @@ export async function runMirror(
     const entryId = randomUUID()
     const createdAt = new Date().toISOString()
     const startTimes = new Map<string, number>([
-      [originalAdapter.id, Date.now()],
-      ...(challengerAdapter ? [[challengerAdapter.id, Date.now()] as [string, number]] : []),
+      ['original', Date.now()],
+      ...(challengerAdapter ? [['challenger', Date.now()] as [string, number]] : []),
     ])
 
     // Stream the original response in real time. Buffer the challenger so the
@@ -125,7 +125,7 @@ export async function runMirror(
       }
 
       if (event.type === 'stream_chunk' && !event.chunk.isFinal) {
-        if (event.brainId === originalAdapter.id) {
+        if (event.role === 'original') {
           if (!originalHeaderPrinted) {
             process.stdout.write(`\nORIGINAL (${originalAdapter.id})\n`)
             originalHeaderPrinted = true
@@ -136,8 +136,8 @@ export async function runMirror(
       }
 
       if (event.type === 'brain_complete') {
-        const latency = Date.now() - (startTimes.get(event.brainId) ?? Date.now())
-        results.set(event.brainId, {
+        const latency = Date.now() - (startTimes.get(event.role) ?? Date.now())
+        results.set(event.role, {
           brainId: event.brainId,
           text: event.response.text,
           inputTokens: event.response.inputTokens,
@@ -150,7 +150,7 @@ export async function runMirror(
         // Ensure original output ends with a newline before challenger block.
         if (originalHeaderPrinted) process.stdout.write('\n')
         if (challengerAdapter) {
-          const challengerResult = results.get(challengerAdapter.id)
+          const challengerResult = results.get('challenger')
           process.stdout.write(`\nCHALLENGER (${challengerAdapter.id})\n`)
           process.stdout.write(`${challengerResult?.text ?? ''}\n`)
         }
@@ -175,7 +175,7 @@ export async function runMirror(
         if (!judgeAdapter) {
           if (originalHeaderPrinted) process.stdout.write('\n')
           if (challengerAdapter) {
-            const challengerResult = results.get(challengerAdapter.id)
+            const challengerResult = results.get('challenger')
             process.stdout.write(`\nCHALLENGER (${challengerAdapter.id})\n`)
             process.stdout.write(`${challengerResult?.text ?? ''}\n`)
           }
@@ -185,14 +185,14 @@ export async function runMirror(
       if (event.type === 'error') throw event.error
     }
 
-    const originalResult = results.get(originalAdapter.id)
+    const originalResult = results.get('original')
     if (originalResult) {
       addHistoryEntry({
         id: entryId,
         createdAt,
         question: fullQuestion,
         original: originalResult,
-        challenger: challengerAdapter ? results.get(challengerAdapter.id) : undefined,
+        challenger: challengerAdapter ? results.get('challenger') : undefined,
         intent: intentResult,
       })
     }
